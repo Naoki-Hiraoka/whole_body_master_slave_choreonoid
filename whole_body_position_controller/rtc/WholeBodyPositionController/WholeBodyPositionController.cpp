@@ -59,7 +59,7 @@ RTC::ReturnCode_t WholeBodyPositionController::onInitialize(){
   this->m_robot_ref_ = robot;
   this->m_robot_com_ = robot->clone();
 
-  this->useJoints_.push_back(this->m_robot_com_->rootLink());
+  if(!this->m_robot_com_->rootLink()->isFixedJoint()) this->useJoints_.push_back(this->m_robot_com_->rootLink());
   for(int i=0;i<this->m_robot_com_->numJoints();i++) this->useJoints_.push_back(this->m_robot_com_->joint(i));
 
   this->outputOffsetInterpolators_.rootpInterpolator_= std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);

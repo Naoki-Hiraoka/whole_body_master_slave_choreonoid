@@ -68,20 +68,15 @@ RTC::ReturnCode_t WholeBodyTorqueController::onInitialize(){
   this->m_robot_act_ = robot->clone();
   this->m_robot_com_ = robot->clone();
 
-  this->useJoints_.push_back(this->m_robot_com_->rootLink());
-  for(int i=0;i<this->m_robot_com_->numJoints();i++) this->useJoints_.push_back(this->m_robot_com_->joint(i));
-
-  for(size_t i=0;i<this->m_robot_com_->numJoints();i++){
-    // apply margin
-    if(this->m_robot_ref_->joint(i)->q_upper() - this->m_robot_ref_->joint(i)->q_lower() > 0.002){
-      this->m_robot_com_->joint(i)->setJointRange(this->m_robot_ref_->joint(i)->q_lower()+0.001,this->m_robot_ref_->joint(i)->q_upper()-0.001);
-    }
-    // 1.0だと安全.4.0は脚.10.0はlapid manipulation らしい
-    this->m_robot_com_->joint(i)->setJointVelocityRange(std::max(this->m_robot_ref_->joint(i)->dq_lower(), -1.0),
-                                                        std::min(this->m_robot_ref_->joint(i)->dq_upper(), 1.0));
+  this->ports_.m_pgainPercentageRef_.data.length(this->m_robot_ref_->numJoints());
+  this->ports_.m_dgainPercentageRef_.data.length(this->m_robot_ref_->numJoints());
+  for(int i=0;i<this->m_robot_ref_->numJoints();i++) {
+    this->ports_.m_pgainPercentageRef_.data[i]=0.0;
+    this->ports_.m_dgainPercentageRef_.data[i]=0.0;
   }
-  this->m_robot_com_->rootLink()->setJointVelocityRange(std::max(this->m_robot_ref_->rootLink()->dq_lower(), -1.0),
-                                                        std::min(this->m_robot_ref_->rootLink()->dq_upper(), 1.0));
+
+  if(!this->m_robot_com_->rootLink()->isFixedJoint()) this->useJoints_.push_back(this->m_robot_com_->rootLink());
+  for(int i=0;i<this->m_robot_com_->numJoints();i++) this->useJoints_.push_back(this->m_robot_com_->joint(i));
 
   std::string jointLimitTableStr;
   if(this->getProperties().hasKey("joint_limit_table")) jointLimitTableStr = std::string(this->getProperties()["joint_limit_table"]);
@@ -89,13 +84,6 @@ RTC::ReturnCode_t WholeBodyTorqueController::onInitialize(){
   std::vector<std::shared_ptr<joint_limit_table::JointLimitTable> > jointLimitTables = joint_limit_table::readJointLimitTablesFromProperty (this->m_robot_com_, jointLimitTableStr);
   std::cerr << "[" << this->m_profile.instance_name << "] joint_limit_table: " << jointLimitTableStr<<std::endl;
   for(size_t i=0;i<jointLimitTables.size();i++){
-    // apply margin
-    for(size_t j=0;j<jointLimitTables[i]->lLimitTable().size();j++){
-      if(jointLimitTables[i]->uLimitTable()[j] - jointLimitTables[i]->lLimitTable()[j] > 0.002){
-        jointLimitTables[i]->uLimitTable()[j] -= 0.001;
-        jointLimitTables[i]->lLimitTable()[j] += 0.001;
-      }
-    }
     this->jointLimitTablesMap_[jointLimitTables[i]->getSelfJoint()].push_back(jointLimitTables[i]);
   }
 
@@ -136,6 +124,10 @@ RTC::ReturnCode_t WholeBodyTorqueController::onInitialize(){
     std::shared_ptr<cpp_filters::IIRFilter<double> > filter = std::make_shared<cpp_filters::IIRFilter<double> >();
     filter->setParameterAsBiquad(500,1/sqrt(2),this->dqActFilter_hz_,0.0);
     this->dqActFilterMap_[this->m_robot_act_->joint(i)] = filter;
+  }
+
+  for(int i=0;i<this->m_robot_com_->numJoints();i++) {
+    this->outputInterpolators_.outputRatioInterpolatorMap_[this->m_robot_com_->joint(i)] = std::make_shared<cpp_filters::TwoPointInterpolator<double> >(0.0,0.0,0.0,cpp_filters::interpolation_mode::HOFFARBIB);
   }
 
   return RTC::RTC_OK;
@@ -233,6 +225,7 @@ void WholeBodyTorqueController::getCollision(const std::string& instance_name, c
 
 
 void WholeBodyTorqueController::processModeTransition(const std::string& instance_name, WholeBodyTorqueController::ControlMode& mode, const cnoid::BodyPtr& robot_ref, const cnoid::BodyPtr& robot_com, WholeBodyTorqueController::OutputInterpolators& outputInterpolators, const std::vector<cnoid::LinkPtr>& useJoints){
+  std::cerr << mode.now() << std::endl;
   switch(mode.now()){
   case WholeBodyTorqueController::ControlMode::MODE_SYNC_TO_CONTROL:
     if(mode.pre() == WholeBodyTorqueController::ControlMode::MODE_IDLE){
@@ -245,7 +238,7 @@ void WholeBodyTorqueController::processModeTransition(const std::string& instanc
   case WholeBodyTorqueController::ControlMode::MODE_SYNC_TO_IDLE:
     if(mode.pre() == WholeBodyTorqueController::ControlMode::MODE_CONTROL){
       for(int i=0;i<robot_com->numJoints();i++) {
-        WholeBodyTorqueController::disableJoint(useJoints[i],robot_ref,outputInterpolators);
+        WholeBodyTorqueController::disableJoint(robot_com->joint(i),robot_ref,outputInterpolators);
       }
     }
     mode.setNextMode(WholeBodyTorqueController::ControlMode::MODE_IDLE);
@@ -330,6 +323,7 @@ void WholeBodyTorqueController::calcOutputPorts(const std::string& instance_name
 }
 
 void WholeBodyTorqueController::enableJoint(const cnoid::LinkPtr& joint_com, WholeBodyTorqueController::OutputInterpolators& outputInterpolators) {
+  if(joint_com->jointId()<0) return;
   outputInterpolators.outputRatioInterpolatorMap_[joint_com]->setGoal(1.0,3.0);
 }
 
@@ -371,7 +365,6 @@ RTC::ReturnCode_t WholeBodyTorqueController::onExecute(RTC::UniqueId ec_id){
 
     // tauを計算
     this->torqueController_.control(this->primitiveCommandMap_, this->collisions_, this->m_robot_ref_, this->m_robot_act_, this->useJoints_, this->jointLimitTablesMap_, dt, this->debugLevel_);
-
   } else {
     // q を計算
     WholeBodyTorqueController::calcq(instance_name, this->m_robot_ref_, this->m_robot_com_);

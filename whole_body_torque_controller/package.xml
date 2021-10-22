@@ -18,4 +18,5 @@
   <depend>collision_checker_msgs</depend>
   <depend>cpp_filters</depend>
   <depend>joint_limit_table</depend>
+  <depend>ik_constraint</depend>
 </package>

@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   collision_checker_msgs
   primitive_motion_level_msgs
   primitive_motion_level_tools
+  ik_constraint
   )
 find_package(choreonoid REQUIRED)
 

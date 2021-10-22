@@ -12,14 +12,13 @@ module primitive_motion_level_msgs
     string parentLinkName;
     RTC::Pose3D localPose;
 
-    // world frame
     double time; // interpolation time
-    RTC::Pose3D pose;
-    DblSequence6 wrench;
+    RTC::Pose3D pose; // world frame
+    DblSequence6 wrench; // world frame. around pose. robot receives
     DblSequence6 poseFollowGain;// pose local frame
     DblSequence6 wrenchFollowGain;// pose local frame
 
-    // local frame (if isGlobal=false). world frame (if isGlobal=true).
+    // pose local frame (if isGlobal=false). world frame (if isGlobal=true).
     boolean isPoseCGlobal;
     DblSequence6Sequence poseC; //pose の frameからのerror の制約
     DblSequence poseld;
@@ -29,7 +28,7 @@ module primitive_motion_level_msgs
     DblSequence wrenchld;
     DblSequence wrenchud;
 
-    // local frame
+    // pose local frame
     DblSequence6 actWrench; // Position control only
     DblSequence6 M;
     DblSequence6 D;

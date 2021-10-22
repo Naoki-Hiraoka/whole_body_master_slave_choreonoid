@@ -15,6 +15,13 @@ find_package(catkin REQUIRED COMPONENTS
 # initialize rtmbuild (generate_messages is called)
 rtmbuild_init()
 
+catkin_package(
+#  INCLUDE_DIRS include
+  LIBRARIES WholeBodyTorqueControllerServiceSkel WholeBodyTorqueControllerServiceStub
+#  CATKIN_DEPENDS other_catkin_pkg
+#  DEPENDS system_lib
+)
+
 # generate idl
 rtmbuild_genidl()
 

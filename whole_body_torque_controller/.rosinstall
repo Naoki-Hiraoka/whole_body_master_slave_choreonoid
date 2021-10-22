@@ -11,3 +11,6 @@
 - git:
     local-name: collision_checker_rtc
     uri: https://github.com/Naoki-Hiraoka/collision_checker_rtc.git
+- git:
+    local-name: ik_solvers
+    uri: https://github.com:Naoki-Hiraoka/ik_solvers.git

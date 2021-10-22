@@ -112,7 +112,7 @@ void CFRController::calcOutputPorts(const std::string& instance_name,
   port.m_primitiveCommandCom_ = port.m_primitiveCommandRef_;
   for(int i=0;i<port.m_primitiveCommandCom_.data.length();i++){
     const cnoid::Position& targetPose = primitiveCommandMap[std::string(port.m_primitiveCommandCom_.data[i].name)]->targetPose();
-    port.m_primitiveCommandCom_.data[i].time = dt;
+    if(port.m_primitiveCommandCom_.data[i].time != 0.0) port.m_primitiveCommandCom_.data[i].time = dt;
     port.m_primitiveCommandCom_.data[i].pose.position.x = targetPose.translation()[0];
     port.m_primitiveCommandCom_.data[i].pose.position.y = targetPose.translation()[1];
     port.m_primitiveCommandCom_.data[i].pose.position.z = targetPose.translation()[2];
@@ -140,7 +140,7 @@ void CFRController::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveCommandCom_.data[comIdx].localPose.orientation.r=0.0;
     port.m_primitiveCommandCom_.data[comIdx].localPose.orientation.p=0.0;
     port.m_primitiveCommandCom_.data[comIdx].localPose.orientation.y=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].time = dt;
+    port.m_primitiveCommandCom_.data[comIdx].time = 0.0;
     port.m_primitiveCommandCom_.data[comIdx].pose.position.x=0.0;
     port.m_primitiveCommandCom_.data[comIdx].pose.position.y=0.0;
     port.m_primitiveCommandCom_.data[comIdx].pose.position.z=0.0;
