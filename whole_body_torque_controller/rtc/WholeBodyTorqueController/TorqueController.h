@@ -28,7 +28,7 @@ namespace WholeBodyTorque {
     public:
       PrimitiveTask(const std::string& name);
       void updateFromPrimitiveCommand(const std::shared_ptr<const primitive_motion_level_tools::PrimitiveState>& primitiveCommand) {primitiveCommand_ = primitiveCommand;}
-      void calcInteractTorque(const cnoid::BodyPtr& robot_act, cnoid::Vector6& rootWrench, double dt, const std::vector<cnoid::LinkPtr>& useJOints);
+      void calcInteractTorque(const cnoid::BodyPtr& robot_act, cnoid::Vector6& rootWrench, double dt, const std::vector<cnoid::LinkPtr>& useJOints, int debugLevel);
       const std::string& name() const { return name_;}
       const std::shared_ptr<const primitive_motion_level_tools::PrimitiveState>& primitiveCommand() const {return primitiveCommand_;}
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW

@@ -108,7 +108,7 @@ RTC::ReturnCode_t WholeBodyTorqueController::onInitialize(){
     std::string tmp;
     while (std::getline(ss, tmp, ',')) maxTorque.push_back(std::stod(tmp));
     if(maxTorque.size()==this->m_robot_com_->numJoints()){
-      std::cerr << "[" << this->m_profile.instance_name << "] max_torque: " << jointLimitTableStr<<std::endl;
+      std::cerr << "[" << this->m_profile.instance_name << "] max_torque: " << maxTorqueStr<<std::endl;
       for(int i=0;i<this->m_robot_com_->numJoints();i++){
         double climit, gearRatio, torqueConst;
         this->m_robot_ref_->joint(i)->info()->read("climit",climit);

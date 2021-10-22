@@ -10,7 +10,7 @@ namespace WholeBodyTorque {
   {
   }
 
-  void TorqueController::PrimitiveTask::calcInteractTorque(const cnoid::BodyPtr& robot_act, cnoid::Vector6& rootWrench, double dt, const std::vector<cnoid::LinkPtr>& useJoints){
+  void TorqueController::PrimitiveTask::calcInteractTorque(const cnoid::BodyPtr& robot_act, cnoid::Vector6& rootWrench, double dt, const std::vector<cnoid::LinkPtr>& useJoints, int debugLevel){
     if(this->name_ == "com" || this->primitiveCommand_->supportCOM()) return;
 
     if(!robot_act->link(this->primitiveCommand_->parentLinkName())) {
@@ -19,9 +19,11 @@ namespace WholeBodyTorque {
     }
 
     PrimitiveTask::calcPositionConstraint(robot_act, this->primitiveCommand_, this->positionConstraint_);
+    this->positionConstraint_->debuglevel() = debugLevel;
     this->positionConstraint_->checkConvergence();
     cnoid::Vector6 error = this->positionConstraint_->calc_error(); // actual - reference. world系
-    const Eigen::SparseMatrix<double,Eigen::RowMajor>& jacobian =  this->positionConstraint_->calc_jacobian(useJoints); // actual - reference. world系, endeffectorまわり
+    std::vector<cnoid::LinkPtr> useJointsAct; for(int i=0;i<useJoints.size();i++) useJointsAct.push_back(robot_act->link(useJoints[i]->name()));
+    const Eigen::SparseMatrix<double,Eigen::RowMajor>& jacobian =  this->positionConstraint_->calc_jacobian(useJointsAct); // actual - reference. world系, endeffectorまわり
 
     cnoid::Vector6 derror = (error - this->prevError_) / dt;
 
@@ -41,8 +43,8 @@ namespace WholeBodyTorque {
       targetWrenchLocal += refWrenchLocal.cwiseProduct(this->primitiveCommand_->wrenchFollowGain());
     }
     cnoid::Vector6 targetWrench; // robot receive
-    targetWrenchLocal.head<3>() = this->primitiveCommand_->targetPose().linear() * targetWrench.head<3>();
-    targetWrenchLocal.tail<3>() = this->primitiveCommand_->targetPose().linear() * targetWrench.tail<3>();
+    targetWrench.head<3>() = this->primitiveCommand_->targetPose().linear() * targetWrenchLocal.head<3>();
+    targetWrench.tail<3>() = this->primitiveCommand_->targetPose().linear() * targetWrenchLocal.tail<3>();
 
     cnoid::VectorX torque = - jacobian.transpose() * targetWrench;
 
@@ -160,20 +162,24 @@ namespace WholeBodyTorque {
 
     // 重力補償トルクを足す
     TorqueController::calcGravityCompensation(robot_act, rootWrench, useJoints);
+    for(int i=0;i<useJoints.size();i++) std::cerr << useJoints[i]->u() <<std::endl;
 
     // command level指令の関節角度に追従するトルクを足す
     //  モータドライバで行う TODO
     for(size_t i=0;i<useJoints.size();i++) if(useJoints[i]->jointId()>=0) useJoints[i]->q() = robot_ref->joint(useJoints[i]->jointId())->q();
+    for(size_t i=0;i<useJoints.size();i++) if(useJoints[i]->jointId()>=0) useJoints[i]->u() += - 10 * robot_act->joint(useJoints[i]->jointId())->dq();
 
     // soft joint limit トルクを足す
     TorqueController::calcJointLimitTorque(robot_act, useJoints);
+
+    for(int i=0;i<useJoints.size();i++) std::cerr << useJoints[i]->u() <<std::endl;
 
     // 目標primitive commandを取得
     TorqueController::getPrimitiveCommand(primitiveCommandMap, this->positionTaskMap_);
 
     // 各primitive command実現のためのトルクを足す (supportCOM, comを除く)
     for(std::map<std::string, std::shared_ptr<TorqueController::PrimitiveTask> >::iterator it = this->positionTaskMap_.begin(); it != this->positionTaskMap_.end(); it++) {
-      it->second->calcInteractTorque(robot_act, rootWrench, dt, useJoints);
+      it->second->calcInteractTorque(robot_act, rootWrench, dt, useJoints, debugLevel);
     }
 
     // 各primitive command実現のためのトルクを足す (supportCOM, com)
@@ -188,6 +194,9 @@ namespace WholeBodyTorque {
       double maxTorque = climit * gearRatio * torqueConst;
       useJoints[i]->u() = std::min(std::max(useJoints[i]->u(), -maxTorque), maxTorque);
     }
+
+    for(int i=0;i<useJoints.size();i++) std::cerr << useJoints[i]->u() <<std::endl;
+
   }
 
 
