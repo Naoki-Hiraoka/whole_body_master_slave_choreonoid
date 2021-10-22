@@ -47,7 +47,7 @@ public:
       m_imuActIn_("imuActIn", m_imuAct_),// required if rootlink is not fixed joint
       m_collisionActIn_("collisionActIn", m_collisionAct_),
 
-      m_tauComOut_("tauComOut", m_qCom_),
+      m_tauComOut_("tauComOut", m_tauCom_),
       m_qComOut_("qComOut", m_qCom_),
       m_pgainPercentageComOut_("pgainPercentageComOut", m_pgainPercentageCom_),
       m_dgainPercentageComOut_("dgainPercentageComOut", m_dgainPercentageCom_),

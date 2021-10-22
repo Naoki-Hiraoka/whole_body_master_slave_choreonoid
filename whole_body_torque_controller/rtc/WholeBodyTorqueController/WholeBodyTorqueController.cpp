@@ -225,7 +225,6 @@ void WholeBodyTorqueController::getCollision(const std::string& instance_name, c
 
 
 void WholeBodyTorqueController::processModeTransition(const std::string& instance_name, WholeBodyTorqueController::ControlMode& mode, const cnoid::BodyPtr& robot_ref, const cnoid::BodyPtr& robot_com, WholeBodyTorqueController::OutputInterpolators& outputInterpolators, const std::vector<cnoid::LinkPtr>& useJoints){
-  std::cerr << mode.now() << std::endl;
   switch(mode.now()){
   case WholeBodyTorqueController::ControlMode::MODE_SYNC_TO_CONTROL:
     if(mode.pre() == WholeBodyTorqueController::ControlMode::MODE_IDLE){
@@ -328,6 +327,7 @@ void WholeBodyTorqueController::enableJoint(const cnoid::LinkPtr& joint_com, Who
 }
 
 void WholeBodyTorqueController::disableJoint(const cnoid::LinkPtr& joint_com, const cnoid::BodyPtr& robot_ref, WholeBodyTorqueController::OutputInterpolators& outputInterpolators) {
+  if(joint_com->jointId()<0) return;
   outputInterpolators.outputRatioInterpolatorMap_[joint_com]->setGoal(0.0,3.0);
 }
 
