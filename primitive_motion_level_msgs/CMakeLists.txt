@@ -3,6 +3,7 @@ project(primitive_motion_level_msgs)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
+set(CMAKE_BUILD_TYPE Release)
 
 # rtmbuild has non exist dependency
 # (ROSBUILD_genmsg_cpp) and (RTMBUILD_${PROJECT_NAME}_genidl)

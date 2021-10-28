@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(whole_body_position_controller)
 
 add_compile_options(-std=c++11)
+set(CMAKE_BUILD_TYPE Release)
 
 # rtmbuild has non exist dependency
 # (ROSBUILD_genmsg_cpp) and (RTMBUILD_${PROJECT_NAME}_genidl)
