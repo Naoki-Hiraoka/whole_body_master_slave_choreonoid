@@ -313,6 +313,17 @@ namespace WholeBodyPosition {
       this->prioritizedIKSolver_.solvePrioritizedIK(robot_com, robot_ref, this->positionTaskMap_, jointLimitTablesMap, collisions, useJoints, dt, this->followRootLink_, debugLevel);
       break;
     }
+
+    // check joint limits
+    for(int i=0;i<robot_com->numJoints();i++){
+      if(robot_com->joint(i)->q() > robot_com->joint(i)->q_upper()) robot_com->joint(i)->q() = robot_com->joint(i)->q_upper();
+      if(robot_com->joint(i)->q() < robot_com->joint(i)->q_lower()) robot_com->joint(i)->q() = robot_com->joint(i)->q_lower();
+      std::vector<std::shared_ptr<joint_limit_table::JointLimitTable> >& jointLimitTables = jointLimitTablesMap[robot_com->joint(i)];
+      for(int j=0;j<jointLimitTables.size();j++){
+        if(robot_com->joint(i)->q() > jointLimitTables[j]->getUlimit()) robot_com->joint(i)->q() = jointLimitTables[j]->getUlimit();
+        if(robot_com->joint(i)->q() < jointLimitTables[j]->getLlimit()) robot_com->joint(i)->q() = jointLimitTables[j]->getLlimit();
+      }
+    }
   }
 
 
@@ -374,7 +385,7 @@ namespace WholeBodyPosition {
     PositionController::getCOMVelocityIKConstraints(this->cOMVelocityConstraint_, limitConstraint, robot_com, dt);
 
     // 関節角度上下限を取得
-    PositionController::getCollisionIKConstraints(this->collisionConstraint_, limitConstraint, robot_com, collisions, dt, 3.0); //weightはweを増やしている
+    PositionController::getCollisionIKConstraints(this->collisionConstraint_, limitConstraint, robot_com, collisions, dt, 10.0); //weightはweを増やしている
 
     // primitive motion levelのIKConstraintを取得
     std::vector<std::shared_ptr<IK::IKConstraint> > supportEEFConstraint;
@@ -382,10 +393,10 @@ namespace WholeBodyPosition {
     std::vector<std::shared_ptr<IK::IKConstraint> > COMRegionConstraint;
     std::vector<std::shared_ptr<IK::IKConstraint> > interactEEFConstraint;
     for(std::map<std::string, std::shared_ptr<PositionController::PositionTask> >::const_iterator it = positionTaskMap.begin(); it != positionTaskMap.end(); it++) {
-      it->second->getIKConstraintsforSupportEEF(supportEEFConstraint, robot_com, dt, 5.0);//weightはweを増やしている
-      it->second->getIKConstraintsforCOM(COMConstraint, robot_com, dt, 5.0);//weightはweを増やしている
-      it->second->getIKConstraintsforCOMRegion(COMRegionConstraint, robot_com, dt, 5.0);//weightはweを増やしている
-      it->second->getIKConstraintsforInteractEEF(interactEEFConstraint, robot_com, dt, 5.0);//weightはweを増やしている
+      it->second->getIKConstraintsforSupportEEF(supportEEFConstraint, robot_com, dt, 10.0);//weightはweを増やしている
+      it->second->getIKConstraintsforCOM(COMConstraint, robot_com, dt, 10.0);//weightはweを増やしている
+      it->second->getIKConstraintsforCOMRegion(COMRegionConstraint, robot_com, dt, 10.0);//weightはweを増やしている
+      it->second->getIKConstraintsforInteractEEF(interactEEFConstraint, robot_com, dt, 10.0);//weightはweを増やしている
     }
 
     // command levelのIKConstraintを取得
