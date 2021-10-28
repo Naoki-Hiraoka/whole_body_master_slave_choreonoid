@@ -6,8 +6,11 @@
 namespace WholeBodyTorque {
   TorqueController::PrimitiveTask::PrimitiveTask(const std::string& name) :
     name_(name),
-    prevError_(cnoid::Vector6::Zero())
+    prevError_(cnoid::Vector6::Zero()),
+    derrorFilter_(std::make_shared<cpp_filters::IIRFilter<cnoid::Vector6> >()),
+    derrorFilter_hz_(1000)//テンポラリ. 後でdtで上書きする
   {
+    this->derrorFilter_->setParameterAsBiquad(500,0.5,this->derrorFilter_hz_,cnoid::Vector6::Zero());
   }
 
   void TorqueController::PrimitiveTask::calcInteractTorque(const cnoid::BodyPtr& robot_act, cnoid::Vector6& rootWrench, double dt, const std::vector<cnoid::LinkPtr>& useJoints, int debugLevel){
@@ -25,7 +28,11 @@ namespace WholeBodyTorque {
     std::vector<cnoid::LinkPtr> useJointsAct; for(int i=0;i<useJoints.size();i++) useJointsAct.push_back(robot_act->link(useJoints[i]->name()));
     const Eigen::SparseMatrix<double,Eigen::RowMajor>& jacobian =  this->positionConstraint_->calc_jacobian(useJointsAct); // actual - reference. world系, endeffectorまわり
 
-    cnoid::Vector6 derror = (error - this->prevError_) / dt;
+    if(this->derrorFilter_hz_ != 1.0 / dt) {
+      this->derrorFilter_hz_ = 1.0 / dt;
+      this->derrorFilter_->setParameterAsBiquad(500,0.5,this->derrorFilter_hz_,this->derrorFilter_->get());
+    }
+    cnoid::Vector6 derror = this->derrorFilter_->passFilter((error - this->prevError_) / dt); // world系
 
     cnoid::Vector6 errorLocal, derrorLocal;
     errorLocal.head<3>() = this->primitiveCommand_->targetPose().linear().transpose() * error.head<3>();

@@ -163,7 +163,7 @@ protected:
   cnoid::BodyPtr m_robot_ref_; // reference (q, basepos and baserpy only)
   cnoid::BodyPtr m_robot_act_; // actual
   cnoid::BodyPtr m_robot_com_; // command (q,tau only)
-  std::unordered_map<cnoid::LinkPtr, std::shared_ptr<cpp_filters::IIRFilter<double> > > dqActFilterMap_; double dqActFilter_hz_;
+  std::unordered_map<cnoid::LinkPtr, std::shared_ptr<cpp_filters::IIRFilter<double> > > dqActFilterMap_; double dqActFilter_hz_; // cutoff 10hz以下で確実に位相遅れによる振動とのこと
 
   // 0. robotの設定
   std::unordered_map<cnoid::LinkPtr, std::vector<std::shared_ptr<joint_limit_table::JointLimitTable> > > jointLimitTablesMap_;

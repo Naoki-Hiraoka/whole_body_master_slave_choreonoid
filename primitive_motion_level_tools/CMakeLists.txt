@@ -20,7 +20,7 @@ rtmbuild_init()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES ${PROJECT_NAME}
-#  CATKIN_DEPENDS other_catkin_pkg
+  CATKIN_DEPENDS cpp_filters
 #  DEPENDS system_lib
 )
 

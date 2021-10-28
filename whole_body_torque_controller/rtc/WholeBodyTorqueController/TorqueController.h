@@ -6,6 +6,7 @@
 #include <joint_limit_table/JointLimitTable.h>
 #include <primitive_motion_level_tools/PrimitiveState.h>
 #include <ik_constraint/PositionConstraint.h>
+#include <cpp_filters/IIRFilter.h>
 #include "Collision.h"
 
 namespace WholeBodyTorque {
@@ -41,8 +42,9 @@ namespace WholeBodyTorque {
       std::shared_ptr<const primitive_motion_level_tools::PrimitiveState> primitiveCommand_;
 
       std::shared_ptr<IK::PositionConstraint> positionConstraint_;
-      cnoid::Position offset_; // world系
-      cnoid::Vector6 prevError_; // referece local系
+
+      cnoid::Vector6 prevError_; // world系
+      std::shared_ptr<cpp_filters::IIRFilter<cnoid::Vector6> > derrorFilter_; double derrorFilter_hz_;//world. // cutoff 10hz以下で確実に位相遅れによる振動とのこと
     };
 
   protected:
