@@ -1,5 +1,6 @@
 #include "PositionController.h"
 #include <cnoid/EigenUtil>
+#include <prioritized_qp/PrioritizedQPSolver.h>
 
 namespace WholeBodyPosition {
   PositionController::PositionTask::PositionTask(const std::string& name) :
@@ -382,35 +383,34 @@ namespace WholeBodyPosition {
     // 関節角度上下限を取得
     std::vector<std::shared_ptr<IK::IKConstraint> > limitConstraint;
     PositionController::getJointLimitIKConstraints(this->jointLimitConstraint_, limitConstraint, robot_com, jointLimitTablesMap, dt);
+
+    // 重心速度上下限を取得
     PositionController::getCOMVelocityIKConstraints(this->cOMVelocityConstraint_, limitConstraint, robot_com, dt);
 
     // 関節角度上下限を取得
     PositionController::getCollisionIKConstraints(this->collisionConstraint_, limitConstraint, robot_com, collisions, dt, 10.0); //weightはweを増やしている
 
+    // 重みにより優先度をつけて同時に解くことが可能なのは、目標位置が重要なタスクで、エラーに同じくらいの大きさで頭打ちをしている場合. 一回の周期での変位は必ずしも優先度通りでは無いが、全体としては優先度をつけて目標位置に収束する. 逆に、一回の周期での変位が重要なタスクは不可. すなわち関節角速度制約や目標角運動量は不可.
+    // 高優先度タスクが満たされていない場合、weが大きくなるので、低優先度タスクが必要以上に収束が遅くなる. 高優先度タスクの目標位置を速く動かすと、低優先度タスクが一時的に満たされなくなることが発生する
+    // 不等式制約があるからか、不等式制約が無いときと比べてweを少し大きめにしないと振動する
+    std::vector<std::shared_ptr<IK::IKConstraint> > softConstraint;
+
     // primitive motion levelのIKConstraintを取得
-    std::vector<std::shared_ptr<IK::IKConstraint> > supportEEFConstraint;
-    std::vector<std::shared_ptr<IK::IKConstraint> > COMConstraint;
-    std::vector<std::shared_ptr<IK::IKConstraint> > COMRegionConstraint;
-    std::vector<std::shared_ptr<IK::IKConstraint> > interactEEFConstraint;
     for(std::map<std::string, std::shared_ptr<PositionController::PositionTask> >::const_iterator it = positionTaskMap.begin(); it != positionTaskMap.end(); it++) {
-      it->second->getIKConstraintsforSupportEEF(supportEEFConstraint, robot_com, dt, 10.0);//weightはweを増やしている
-      it->second->getIKConstraintsforCOM(COMConstraint, robot_com, dt, 10.0);//weightはweを増やしている
-      it->second->getIKConstraintsforCOMRegion(COMRegionConstraint, robot_com, dt, 10.0);//weightはweを増やしている
-      it->second->getIKConstraintsforInteractEEF(interactEEFConstraint, robot_com, dt, 10.0);//weightはweを増やしている
+      it->second->getIKConstraintsforSupportEEF(softConstraint, robot_com, dt, 10.0);//weightはweを増やしている
+      it->second->getIKConstraintsforCOM(softConstraint, robot_com, dt, 3.0);//weightはweを増やしている
+      it->second->getIKConstraintsforCOMRegion(softConstraint, robot_com, dt, 10.0);//weightはweを増やしている
+      it->second->getIKConstraintsforInteractEEF(softConstraint, robot_com, dt, 1.0);//weightはweを増やしている
     }
 
     // command levelのIKConstraintを取得
-    std::vector<std::shared_ptr<IK::IKConstraint> > commandLevelConstraint;
-    PositionController::getCommandLevelIKConstraints(robot_ref, this->jointAngleConstraint_, this->rootLinkConstraint_, commandLevelConstraint, robot_com, dt, followRootLink);
+    PositionController::getCommandLevelIKConstraints(robot_ref, this->jointAngleConstraint_, this->rootLinkConstraint_, softConstraint, robot_com, dt, followRootLink, 0.1);
+
 
     std::vector<std::vector<std::shared_ptr<IK::IKConstraint> > > ikConstraint;
     ikConstraint.push_back(jointVelocityConstraint);
     ikConstraint.push_back(limitConstraint);
-    ikConstraint.push_back(supportEEFConstraint);
-    ikConstraint.push_back(COMRegionConstraint);
-    ikConstraint.push_back(interactEEFConstraint);
-    ikConstraint.push_back(COMConstraint);
-    ikConstraint.push_back(commandLevelConstraint);
+    ikConstraint.push_back(softConstraint);
 
     for(int i=0;i<ikConstraint.size();i++) for(size_t j=0;j<ikConstraint[i].size();j++) ikConstraint[i][j]->debuglevel() = debugLevel;
 
@@ -418,8 +418,56 @@ namespace WholeBodyPosition {
                                                        ikConstraint,
                                                        this->prevTasks_,
                                                        1,//loop
-                                                       1e-3,
-                                                       debugLevel//debug
+                                                       1e-6,
+                                                       debugLevel,//debug
+                                                       dt,
+                                                       [](std::shared_ptr<prioritized_qp_base::Task>& task, int debugLevel){
+                                                         std::shared_ptr<prioritized_qp::Task> taskOSQP = std::dynamic_pointer_cast<prioritized_qp::Task>(task);
+                                                         if(!taskOSQP){
+                                                           task = std::make_shared<prioritized_qp::Task>();
+                                                           taskOSQP = std::dynamic_pointer_cast<prioritized_qp::Task>(task);
+                                                         }
+                                                         taskOSQP->solver().settings()->setVerbosity(debugLevel);
+                                                         taskOSQP->solver().settings()->setMaxIteration(500);
+                                                         taskOSQP->solver().settings()->setCheckTermination(10);//すぐに収束するなら、小さいほうが速い
+                                                         taskOSQP->solver().settings()->setLinearSystemSolver(0);//MKTを使ってもそんなに速くならなかった
+                                                         taskOSQP->solver().settings()->setAbsoluteTolerance(1e-2);// 大きい方が速いが，不正確
+                                                         taskOSQP->solver().settings()->setRelativeTolerance(1e-2);// 大きい方が速いが，不正確
+                                                         taskOSQP->solver().settings()->setPrimalInfeasibilityTollerance(1e-2);// 大きい方が速いが，不正確
+                                                         taskOSQP->solver().settings()->setDualInfeasibilityTollerance(1e-2);// 大きい方が速いが，不正確
+                                                         taskOSQP->solver().settings()->setRho(1e2);// 大きい方が速いが，不正確
+                                                         taskOSQP->solver().settings()->setScaledTerimination(true);// avoid too severe termination check
+                                                       }
+                                                       // [](std::shared_ptr<prioritized_qp_base::Task>& task, int debugLevel){
+                                                       //   std::shared_ptr<prioritized_qp_nasoq::Task> taskNASOQ = std::dynamic_pointer_cast<prioritized_qp_nasoq::Task>(task);
+                                                       //   if(!taskNASOQ){
+                                                       //     task = std::make_shared<prioritized_qp_nasoq::Task>();
+                                                       //     taskNASOQ = std::dynamic_pointer_cast<prioritized_qp_nasoq::Task>(task);
+                                                       //   }
+                                                       //   taskNASOQ->settings().scaling=10;
+                                                       //   taskNASOQ->settings().max_iter_nas=4000;
+                                                       //   taskNASOQ->settings().diag_perturb=1e-3;
+                                                       //   taskNASOQ->settings().eps=1e-3;
+                                                       //   taskNASOQ->settings().eps_rel=1e-3;
+                                                       //   taskNASOQ->settings().stop_tol=1e-5;
+                                                       //   taskNASOQ->settings().inner_iter_ref=2;
+                                                       //   taskNASOQ->settings().outer_iter_ref=2;
+                                                       //   taskNASOQ->settings().max_iter=0;
+                                                       //   taskNASOQ->settings().nasoq_variant="fixed";
+                                                       // }
+                                                       // [](std::shared_ptr<prioritized_qp_base::Task>& task, int debugLevel){
+                                                       //   std::shared_ptr<prioritized_qp_qpswift::Task> taskQPSWIFT = std::dynamic_pointer_cast<prioritized_qp_qpswift::Task>(task);
+                                                       //   if(!taskQPSWIFT){
+                                                       //     task = std::make_shared<prioritized_qp_qpswift::Task>();
+                                                       //     taskQPSWIFT = std::dynamic_pointer_cast<prioritized_qp_qpswift::Task>(task);
+                                                       //   }
+                                                       //   taskQPSWIFT->solver().setting().verbose = debugLevel;
+                                                       //   taskQPSWIFT->solver().setting().reltol = 1e-6;
+                                                       //   taskQPSWIFT->solver().setting().abstol = 1e-6;
+                                                       //   taskQPSWIFT->solver().setting().sigma = 100;
+                                                       //   taskQPSWIFT->solver().setting().maxit = 1000;
+                                                       // }
+
                                                        );
 
   }

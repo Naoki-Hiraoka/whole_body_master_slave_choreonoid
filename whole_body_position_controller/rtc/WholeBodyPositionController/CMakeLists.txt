@@ -8,6 +8,9 @@ add_definitions(-Wno-deprecated)
 find_package(catkin REQUIRED COMPONENTS
   rtmbuild
   fullbody_inverse_kinematics_solver
+  prioritized_qp
+  #prioritized_qp_nasoq
+  #prioritized_qp_qpswift
   prioritized_inverse_kinematics_solver
   cpp_filters
   ik_constraint_joint_limit_table

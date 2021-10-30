@@ -107,7 +107,7 @@ namespace WholeBodyPosition {
                               bool followRootLink,
                               int debugLevel);
     protected:
-      std::vector<std::shared_ptr<prioritized_qp::Task> > prevTasks_;
+      std::vector<std::shared_ptr<prioritized_qp_base::Task> > prevTasks_;
 
       std::unordered_map<cnoid::LinkPtr,std::shared_ptr<IK::JointVelocityConstraint> > jointVelocityConstraint_;
       std::shared_ptr<IK::COMVelocityConstraint> cOMVelocityConstraint_;
