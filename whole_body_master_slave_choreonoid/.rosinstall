@@ -11,3 +11,6 @@
 - git:
     local-name: lp_solvers
     uri: https://github.com/Naoki-Hiraoka/lp_solvers.git
+- git:
+    local-name: primitive_motion_level_controller
+    uri: https://github.com/Naoki-Hiraoka/primitive_motion_level_controller.git
