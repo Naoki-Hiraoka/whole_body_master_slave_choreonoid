@@ -1,0 +1,16 @@
+- git:
+    local-name: choreonoid
+    uri: https://github.com/choreonoid/choreonoid.git
+    version: release-1.7
+- git:
+    local-name: cpp_filters
+    uri: git@github.com:Naoki-Hiraoka/cpp_filters.git
+- git:
+    local-name: static_equilibuim_test
+    uri: https://github.com/Naoki-Hiraoka/static_equilibuim_test.git
+- git:
+    local-name: lp_solvers
+    uri: https://github.com/Naoki-Hiraoka/lp_solvers.git
+- git:
+    local-name: primitive_motion_level_controller
+    uri: https://github.com/Naoki-Hiraoka/primitive_motion_level_controller.git

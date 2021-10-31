@@ -29,8 +29,8 @@ COMController::COMController(RTC::Manager* manager) : RTC::DataFlowComponentBase
 
 RTC::ReturnCode_t COMController::onInitialize(){
 
-  addInPort("primitiveCommandRefIn", this->ports_.m_primitiveCommandRefIn_);
-  addOutPort("primitiveCommandComOut", this->ports_.m_primitiveCommandComOut_);
+  addInPort("primitiveStateRefIn", this->ports_.m_primitiveStateRefIn_);
+  addOutPort("primitiveStateComOut", this->ports_.m_primitiveStateComOut_);
   addOutPort("verticesOut", this->ports_.m_verticesOut_);
   this->ports_.m_COMControllerServicePort_.registerProvider("service0", "COMControllerService", this->ports_.m_service0_);
   addPort(this->ports_.m_COMControllerServicePort_);
@@ -56,29 +56,29 @@ RTC::ReturnCode_t COMController::onInitialize(){
 }
 
 void COMController::readPorts(const std::string& instance_name, COMController::Ports& port) {
-  if(port.m_primitiveCommandRefIn_.isNew()) port.m_primitiveCommandRefIn_.read();
+  if(port.m_primitiveStateRefIn_.isNew()) port.m_primitiveStateRefIn_.read();
 }
 
-void COMController::getPrimitiveCommand(const std::string& instance_name, const COMController::Ports& port, double dt, std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveCommandMap) {
+void COMController::getPrimitiveState(const std::string& instance_name, const COMController::Ports& port, double dt, std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveStateMap) {
   // 消滅したEndEffectorを削除
-  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::iterator it = primitiveCommandMap.begin(); it != primitiveCommandMap.end(); ) {
+  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::iterator it = primitiveStateMap.begin(); it != primitiveStateMap.end(); ) {
     bool found = false;
-    for(size_t i=0;i<port.m_primitiveCommandRef_.data.length();i++) {
-      if(std::string(port.m_primitiveCommandRef_.data[i].name)==it->first) found = true;
+    for(size_t i=0;i<port.m_primitiveStateRef_.data.length();i++) {
+      if(std::string(port.m_primitiveStateRef_.data[i].name)==it->first) found = true;
     }
-    if (!found) it = primitiveCommandMap.erase(it);
+    if (!found) it = primitiveStateMap.erase(it);
     else ++it;
   }
   // 増加したEndEffectorの反映
-  for(size_t i=0;i<port.m_primitiveCommandRef_.data.length();i++){
-    if(primitiveCommandMap.find(std::string(port.m_primitiveCommandRef_.data[i].name))==primitiveCommandMap.end()){
-      primitiveCommandMap[std::string(port.m_primitiveCommandRef_.data[i].name)] = std::make_shared<primitive_motion_level_tools::PrimitiveState>(std::string(port.m_primitiveCommandRef_.data[i].name));
+  for(size_t i=0;i<port.m_primitiveStateRef_.data.length();i++){
+    if(primitiveStateMap.find(std::string(port.m_primitiveStateRef_.data[i].name))==primitiveStateMap.end()){
+      primitiveStateMap[std::string(port.m_primitiveStateRef_.data[i].name)] = std::make_shared<primitive_motion_level_tools::PrimitiveState>(std::string(port.m_primitiveStateRef_.data[i].name));
     }
   }
   // 各指令値の反映
-  for(size_t i=0;i<port.m_primitiveCommandRef_.data.length();i++){
-    const primitive_motion_level_msgs::PrimitiveStateIdl& idl = port.m_primitiveCommandRef_.data[i];
-    std::shared_ptr<primitive_motion_level_tools::PrimitiveState> state = primitiveCommandMap[std::string(idl.name)];
+  for(size_t i=0;i<port.m_primitiveStateRef_.data.length();i++){
+    const primitive_motion_level_msgs::PrimitiveStateIdl& idl = port.m_primitiveStateRef_.data[i];
+    std::shared_ptr<primitive_motion_level_tools::PrimitiveState> state = primitiveStateMap[std::string(idl.name)];
     state->updateFromIdl(idl);
     state->updateTargetForOneStep(dt);
   }
@@ -101,76 +101,76 @@ void COMController::preProcessForControl(const std::string& instance_name) {
 
 void COMController::calcOutputPorts(const std::string& instance_name,
                                     COMController::Ports& port,
-                                    std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveCommandMap,
+                                    std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveStateMap,
                                     double dt,
                                     const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,// world frame
                                     const Eigen::VectorXd& l,// world frame
                                     const Eigen::VectorXd& u,// world frame
                                     const std::vector<Eigen::Vector2d>& vertices// world frame
                                     ){
-  // primitiveCommand
-  port.m_primitiveCommandCom_ = port.m_primitiveCommandRef_;
-  for(int i=0;i<port.m_primitiveCommandCom_.data.length();i++){
-    const cnoid::Position& targetPose = primitiveCommandMap[std::string(port.m_primitiveCommandCom_.data[i].name)]->targetPose();
-    if(port.m_primitiveCommandCom_.data[i].time != 0.0) port.m_primitiveCommandCom_.data[i].time = dt;
-    port.m_primitiveCommandCom_.data[i].pose.position.x = targetPose.translation()[0];
-    port.m_primitiveCommandCom_.data[i].pose.position.y = targetPose.translation()[1];
-    port.m_primitiveCommandCom_.data[i].pose.position.z = targetPose.translation()[2];
+  // primitiveState
+  port.m_primitiveStateCom_ = port.m_primitiveStateRef_;
+  for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
+    const cnoid::Position& targetPose = primitiveStateMap[std::string(port.m_primitiveStateCom_.data[i].name)]->targetPose();
+    if(port.m_primitiveStateCom_.data[i].time != 0.0) port.m_primitiveStateCom_.data[i].time = dt;
+    port.m_primitiveStateCom_.data[i].pose.position.x = targetPose.translation()[0];
+    port.m_primitiveStateCom_.data[i].pose.position.y = targetPose.translation()[1];
+    port.m_primitiveStateCom_.data[i].pose.position.z = targetPose.translation()[2];
     cnoid::Vector3 rpy = cnoid::rpyFromRot(targetPose.linear());
-    port.m_primitiveCommandCom_.data[i].pose.orientation.r = rpy[0];
-    port.m_primitiveCommandCom_.data[i].pose.orientation.p = rpy[1];
-    port.m_primitiveCommandCom_.data[i].pose.orientation.y = rpy[2];
-    const cnoid::Vector6& targetWrench = primitiveCommandMap[std::string(port.m_primitiveCommandCom_.data[i].name)]->targetWrench();
-    for(size_t j=0;j<6;j++) port.m_primitiveCommandCom_.data[i].wrench[j] = targetWrench[j];
+    port.m_primitiveStateCom_.data[i].pose.orientation.r = rpy[0];
+    port.m_primitiveStateCom_.data[i].pose.orientation.p = rpy[1];
+    port.m_primitiveStateCom_.data[i].pose.orientation.y = rpy[2];
+    const cnoid::Vector6& targetWrench = primitiveStateMap[std::string(port.m_primitiveStateCom_.data[i].name)]->targetWrench();
+    for(size_t j=0;j<6;j++) port.m_primitiveStateCom_.data[i].wrench[j] = targetWrench[j];
   }
 
   // com Feasible Region
   int comIdx = -1;
-  for(int i=0;i<port.m_primitiveCommandCom_.data.length();i++){
-    if(std::string(port.m_primitiveCommandCom_.data[i].name) == "com") comIdx = i;
+  for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
+    if(std::string(port.m_primitiveStateCom_.data[i].name) == "com") comIdx = i;
   }
   if(comIdx == -1){
-    comIdx = port.m_primitiveCommandCom_.data.length();
-    port.m_primitiveCommandCom_.data.length(port.m_primitiveCommandCom_.data.length()+1);
-    port.m_primitiveCommandCom_.data[comIdx].name="com";
-    port.m_primitiveCommandCom_.data[comIdx].parentLinkName="com";
-    port.m_primitiveCommandCom_.data[comIdx].localPose.position.x=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].localPose.position.y=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].localPose.position.z=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].localPose.orientation.r=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].localPose.orientation.p=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].localPose.orientation.y=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].time = 0.0;
-    port.m_primitiveCommandCom_.data[comIdx].pose.position.x=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].pose.position.y=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].pose.position.z=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].pose.orientation.r=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].pose.orientation.p=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].pose.orientation.y=0.0;
-    port.m_primitiveCommandCom_.data[comIdx].supportCOM = false;
-    port.m_primitiveCommandCom_.data[comIdx].isWrenchCGlobal = false;
-    for(int i=0;i<6;i++) port.m_primitiveCommandCom_.data[comIdx].wrench[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveCommandCom_.data[comIdx].M[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveCommandCom_.data[comIdx].D[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveCommandCom_.data[comIdx].K[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveCommandCom_.data[comIdx].poseFollowGain[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveCommandCom_.data[comIdx].wrenchFollowGain[i] = 0.0;
+    comIdx = port.m_primitiveStateCom_.data.length();
+    port.m_primitiveStateCom_.data.length(port.m_primitiveStateCom_.data.length()+1);
+    port.m_primitiveStateCom_.data[comIdx].name="com";
+    port.m_primitiveStateCom_.data[comIdx].parentLinkName="com";
+    port.m_primitiveStateCom_.data[comIdx].localPose.position.x=0.0;
+    port.m_primitiveStateCom_.data[comIdx].localPose.position.y=0.0;
+    port.m_primitiveStateCom_.data[comIdx].localPose.position.z=0.0;
+    port.m_primitiveStateCom_.data[comIdx].localPose.orientation.r=0.0;
+    port.m_primitiveStateCom_.data[comIdx].localPose.orientation.p=0.0;
+    port.m_primitiveStateCom_.data[comIdx].localPose.orientation.y=0.0;
+    port.m_primitiveStateCom_.data[comIdx].time = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].pose.position.x=0.0;
+    port.m_primitiveStateCom_.data[comIdx].pose.position.y=0.0;
+    port.m_primitiveStateCom_.data[comIdx].pose.position.z=0.0;
+    port.m_primitiveStateCom_.data[comIdx].pose.orientation.r=0.0;
+    port.m_primitiveStateCom_.data[comIdx].pose.orientation.p=0.0;
+    port.m_primitiveStateCom_.data[comIdx].pose.orientation.y=0.0;
+    port.m_primitiveStateCom_.data[comIdx].supportCOM = false;
+    port.m_primitiveStateCom_.data[comIdx].isWrenchCGlobal = false;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrench[i] = 0.0;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].M[i] = 0.0;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].D[i] = 0.0;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].K[i] = 0.0;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[i] = 0.0;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrenchFollowGain[i] = 0.0;
   }
-  port.m_primitiveCommandCom_.data[comIdx].poseC.length(M.rows());
-  port.m_primitiveCommandCom_.data[comIdx].poseld.length(l.rows());
-  port.m_primitiveCommandCom_.data[comIdx].poseud.length(u.rows());
+  port.m_primitiveStateCom_.data[comIdx].poseC.length(M.rows());
+  port.m_primitiveStateCom_.data[comIdx].poseld.length(l.rows());
+  port.m_primitiveStateCom_.data[comIdx].poseud.length(u.rows());
   cnoid::MatrixXd Mdense = M;
   for(int i=0;i<M.rows();i++){
-    for(int j=0;j<2;j++) port.m_primitiveCommandCom_.data[comIdx].poseC[i][j] = Mdense(i,j);
-    for(int j=2;j<6;j++) port.m_primitiveCommandCom_.data[comIdx].poseC[i][j] = 0.0;
-    port.m_primitiveCommandCom_.data[comIdx].poseld[i] = std::max(l[i],-1e10); // 大きすぎると後のコンポーネントの処理でオーバーフローする
-    port.m_primitiveCommandCom_.data[comIdx].poseud[i] = std::min(u[i],1e10);
+    for(int j=0;j<2;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = Mdense(i,j);
+    for(int j=2;j<6;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].poseld[i] = std::max(l[i],-1e10); // 大きすぎると後のコンポーネントの処理でオーバーフローする
+    port.m_primitiveStateCom_.data[comIdx].poseud[i] = std::min(u[i],1e10);
   }
-  port.m_primitiveCommandCom_.data[comIdx].isPoseCGlobal = true;
-  port.m_primitiveCommandComOut_.write();
+  port.m_primitiveStateCom_.data[comIdx].isPoseCGlobal = true;
+  port.m_primitiveStateComOut_.write();
 
   // vertices
-  port.m_vertices_.tm = port.m_primitiveCommandRef_.tm;
+  port.m_vertices_.tm = port.m_primitiveStateRef_.tm;
   port.m_vertices_.data.length(vertices.size()*2);
   for(int i=0;i<vertices.size();i++){
     for(int j=0;j<2;j++) port.m_vertices_.data[i*2+j] = vertices[i][j];
@@ -188,7 +188,7 @@ RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
   COMController::readPorts(instance_name, this->ports_);
 
   // get primitive motion level command
-  COMController::getPrimitiveCommand(instance_name, this->ports_, dt, this->primitiveCommandMap_);
+  COMController::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStateMap_);
 
   // mode遷移を実行
   COMController::processModeTransition(instance_name, this->mode_);
@@ -203,7 +203,7 @@ RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
       COMController::preProcessForControl(instance_name);
     }
 
-    // if(cFRCalculator_.computeCOM(this->primitiveCommandMap_, this->robot_, this->debugLevel_)){
+    // if(cFRCalculator_.computeCOM(this->primitiveStateMap_, this->robot_, this->debugLevel_)){
     //   M = this->cFRCalculator_.M();
     //   l = this->cFRCalculator_.l()+cnoid::VectorX::Ones(this->cFRCalculator_.l().size())*this->regionMargin_;
     //   u = this->cFRCalculator_.u()-cnoid::VectorX::Ones(this->cFRCalculator_.u().size())*this->regionMargin_;
@@ -212,7 +212,7 @@ RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
   }
 
   // write outport
-  COMController::calcOutputPorts(instance_name, this->ports_, this->primitiveCommandMap_, dt,M,l,u, vertices);
+  COMController::calcOutputPorts(instance_name, this->ports_, this->primitiveStateMap_, dt,M,l,u, vertices);
 
   this->loop_++;
   return RTC::RTC_OK;

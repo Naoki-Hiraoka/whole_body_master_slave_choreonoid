@@ -203,7 +203,13 @@ RTC::ReturnCode_t CFRController::onExecute(RTC::UniqueId ec_id){
       CFRController::preProcessForControl(instance_name);
     }
 
-    if(cFRCalculator_.computeCFR(this->primitiveCommandMap_, this->robot_, this->debugLevel_)){
+    std::vector<std::shared_ptr<primitive_motion_level_tools::PrimitiveState> > supportEEFs;
+    for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = this->primitiveCommandMap_.begin(); it != this->primitiveCommandMap_.end(); it++) {
+      if(it->first != "com" && it->second->supportCOM()){
+        supportEEFs.push_back(it->second);
+      }
+    }
+    if(cFRCalculator_.computeCFR(supportEEFs, this->robot_->mass(), this->debugLevel_)){
       M = this->cFRCalculator_.M();
       l = this->cFRCalculator_.l()+cnoid::VectorX::Ones(this->cFRCalculator_.l().size())*this->regionMargin_;
       u = this->cFRCalculator_.u()-cnoid::VectorX::Ones(this->cFRCalculator_.u().size())*this->regionMargin_;

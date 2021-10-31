@@ -1,10 +1,10 @@
-#include "CFRCalculator.h"
+#include <cfr_calculator/cfr_calculator.h>
 
 #include <iostream>
 #include <static_equilibuim_test/StaticEquilibuimTest.h>
 #include <cnoid/EigenUtil>
 
-namespace CFR {
+namespace cfr_calculator {
   bool appendRow(const std::vector<cnoid::VectorX>& vs, cnoid::VectorX& vout){
     size_t rows = 0;
     for(size_t i=0;i<vs.size();i++){
@@ -69,15 +69,16 @@ namespace CFR {
     return true;
   }
 
-  bool CFRCalculator::computeCFR(const std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveCommandMap, cnoid::BodyPtr& robot, int debugLevel) {
-    std::vector<std::shared_ptr<primitive_motion_level_tools::PrimitiveState> > supportEEFs;
-    for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveCommandMap.begin(); it != primitiveCommandMap.end(); it++) {
-      if(it->first != "com" && it->second->supportCOM()){
-        supportEEFs.push_back(it->second);
-      }
+  bool CFRCalculator::computeCFR(const std::vector<std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& supportEEFs,
+                                 double m,
+                                 int debugLevel) {
+    if(supportEEFs.size() ==0) {
+      this->M_.resize(0,2);
+      this->l_.resize(0);
+      this->u_.resize(0);
+      this->vertices_.clear();
+      return false;
     }
-
-    if(supportEEFs.size() ==0) return false;
 
     Eigen::SparseMatrix<double,Eigen::RowMajor> A;
     Eigen::VectorXd b;
@@ -95,13 +96,13 @@ namespace CFR {
       Eigen::SparseMatrix<double,Eigen::RowMajor> G;
       Eigen::VectorXd h = Eigen::VectorXd::Zero(6);
       {
-        h[2] = robot->mass()*9.80665;
+        h[2] = m*9.80665;
 
         std::vector<Eigen::SparseMatrix<double,Eigen::ColMajor> > Gs;
         {
           Eigen::SparseMatrix<double,Eigen::ColMajor> G01(6,2);
-          G01.insert(3,1) = -robot->mass()*9.80665;
-          G01.insert(4,0) = robot->mass()*9.80665;
+          G01.insert(3,1) = -m*9.80665;
+          G01.insert(4,0) = m*9.80665;
           Gs.push_back(G01);
         }
 
@@ -134,7 +135,7 @@ namespace CFR {
         }
 
         Eigen::SparseMatrix<double,Eigen::ColMajor> G_ColMajor;
-        CFR::appendCol(Gs,G_ColMajor);
+        cfr_calculator::appendCol(Gs,G_ColMajor);
         G = G_ColMajor;
       }
 
@@ -176,11 +177,11 @@ namespace CFR {
           dls.push_back(dl);
           dus.push_back(du);
         }
-        CFR::appendDiag(As,A_contact);
-        CFR::appendRow(bs,b_contact);
-        CFR::appendDiag(Cs,C_contact);
-        CFR::appendRow(dls,dl_contact);
-        CFR::appendRow(dus,du_contact);
+        cfr_calculator::appendDiag(As,A_contact);
+        cfr_calculator::appendRow(bs,b_contact);
+        cfr_calculator::appendDiag(Cs,C_contact);
+        cfr_calculator::appendRow(dls,dl_contact);
+        cfr_calculator::appendRow(dus,du_contact);
       }
 
       A = Eigen::SparseMatrix<double,Eigen::RowMajor>(G.rows()+A_contact.rows(),G.cols());

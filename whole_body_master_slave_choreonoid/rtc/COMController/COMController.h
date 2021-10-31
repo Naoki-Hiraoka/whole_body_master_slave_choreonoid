@@ -27,19 +27,22 @@ public:
   class Ports {
   public:
     Ports() :
-      m_primitiveCommandRefIn_("primitiveCommandRefIn", m_primitiveCommandRef_),
+      m_primitiveStateRefIn_("primitiveStateRefIn", m_primitiveStateRef_),
+      m_previewPrimitiveStateRefIn_("previewPrimitiveStateRefIn", m_previewPrimitiveStateRef_),
 
-      m_primitiveCommandComOut_("primitiveCommandComOut", m_primitiveCommandCom_),
+      m_primitiveStateComOut_("primitiveStateComOut", m_primitiveStateCom_),
       m_verticesOut_("verticesOut", m_vertices_),
 
       m_COMControllerServicePort_("COMControllerService") {
     }
 
-    primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveCommandRef_;
-    RTC::InPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveCommandRefIn_;
+    primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateRef_;
+    RTC::InPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateRefIn_;
+    primitive_motion_level_msgs::TimedPrimitiveStateSeq m_previewPrimitiveStateRef_;
+    RTC::InPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_previewPrimitiveStateRefIn_;
 
-    primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveCommandCom_;
-    RTC::OutPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveCommandComOut_;
+    primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateCom_;
+    RTC::OutPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateComOut_;
     RTC::TimedDoubleSeq m_vertices_;
     RTC::OutPort<RTC::TimedDoubleSeq> m_verticesOut_;
 
@@ -100,19 +103,19 @@ protected:
   cnoid::BodyPtr robot_;
 
   // 1. portから受け取ったprimitive motion level 指令など
-  std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> > primitiveCommandMap_;
+  std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> > primitiveStateMap_;
 
   // params
   double regionMargin_;
 
   // static functions
   static void readPorts(const std::string& instance_name, COMController::Ports& port);
-  static void getPrimitiveCommand(const std::string& instance_name, const COMController::Ports& port, double dt, std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveCommandMap);
+  static void getPrimitiveState(const std::string& instance_name, const COMController::Ports& port, double dt, std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveStateMap);
   static void processModeTransition(const std::string& instance_name, COMController::ControlMode& mode);
   static void preProcessForControl(const std::string& instance_name);
   static void calcOutputPorts(const std::string& instance_name,
                               COMController::Ports& port,
-                              std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveCommandMap,
+                              std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveStateMap,
                               double dt,
                               const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
                               const Eigen::VectorXd& l,

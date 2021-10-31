@@ -21,7 +21,7 @@
 #include <primitive_motion_level_msgs/idl/PrimitiveState.hh>
 #include <primitive_motion_level_tools/PrimitiveState.h>
 #include "CFRControllerService_impl.h"
-#include "CFRCalculator.h"
+#include "cfr_calculator/cfr_calculator.h"
 
 class CFRController : public RTC::DataFlowComponentBase{
 public:
@@ -103,7 +103,7 @@ protected:
   // 1. portから受け取ったprimitive motion level 指令など
   std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> > primitiveCommandMap_;
 
-  CFR::CFRCalculator cFRCalculator_;
+  cfr_calculator::CFRCalculator cFRCalculator_;
 
   // params
   double regionMargin_;

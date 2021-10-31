@@ -1,5 +1,5 @@
-#ifndef CFRCONTROLLER_CFRCALCULTOR_H
-#define CFRCONTROLLER_CFRCALCULTOR_H
+#ifndef CFRCALCULTOR_CFRCALCULTOR_H
+#define CFRCALCULTOR_CFRCALCULTOR_H
 
 #include <map>
 #include <memory>
@@ -7,11 +7,13 @@
 #include <vector>
 #include <primitive_motion_level_tools/PrimitiveState.h>
 
-namespace CFR {
+namespace cfr_calculator {
 
   class CFRCalculator {
   public:
-    bool computeCFR(const std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& primitiveCommandMap, cnoid::BodyPtr& robot, int debugLevel);
+    bool computeCFR(const std::vector<std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >& supportEEFs,
+                    double m/*robotの質量*/,
+                    int debugLevel);
     const Eigen::SparseMatrix<double,Eigen::RowMajor>& M() const { return M_;}
     const Eigen::VectorXd& l() const { return l_;}
     const Eigen::VectorXd& u() const { return u_;}

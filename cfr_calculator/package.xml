@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>whole_body_master_slave_choreonoid</name>
+  <name>cfr_calculator</name>
   <version>0.0.0</version>
-  <description>The whole_body_master_slave_choreonoid package</description>
+  <description>The cfr_calculator package</description>
 
   <maintainer email="hiraoka@jsk.imi.i.u-tokyo.ac.jp">Naoki-Hiraoka</maintainer>
 
@@ -10,12 +10,10 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <depend>roscpp</depend>
-  <depend>rtmbuild</depend>
-
   <depend>choreonoid</depend>
+
   <depend>primitive_motion_level_msgs</depend>
   <depend>primitive_motion_level_tools</depend>
-  <depend>cfr_calculator</depend>
+  <depend>static_equilibuim_test</depend>
 
 </package>
