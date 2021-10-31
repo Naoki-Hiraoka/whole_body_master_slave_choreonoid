@@ -1,0 +1,18 @@
+#include "ExtendedDataTypes.idl" // openrtm
+
+module whole_body_master_slave_choreonoid
+{
+  interface COMControllerService
+  {
+    struct COMControllerParam
+    {
+      long debugLevel;
+      double regionMargin;
+    };
+    void setParams(in COMControllerParam i_param);
+    void getParams(out COMControllerParam i_param);
+
+    boolean startControl();
+    boolean stopControl();
+  };
+};

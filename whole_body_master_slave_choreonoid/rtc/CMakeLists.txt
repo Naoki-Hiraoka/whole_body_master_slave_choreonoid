@@ -1,1 +1,2 @@
 add_subdirectory(CFRController)
+add_subdirectory(COMController)
