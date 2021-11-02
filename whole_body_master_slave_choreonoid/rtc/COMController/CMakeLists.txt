@@ -9,7 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   rtmbuild
   primitive_motion_level_msgs
   primitive_motion_level_tools
-  static_equilibuim_test
+  cfr_calculator
   cpp_filters
   )
 find_package(choreonoid REQUIRED)
