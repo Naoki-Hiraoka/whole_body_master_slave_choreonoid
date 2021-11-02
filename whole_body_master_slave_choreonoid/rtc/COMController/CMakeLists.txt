@@ -29,6 +29,7 @@ endforeach(lib)
 rtmbuild_add_library(COMController SHARED
   COMController.cpp
   COMControllerService_impl.cpp
+  SCFRController.cpp
   )
 target_link_libraries(COMController
   ${catkin_LIBRARIES}

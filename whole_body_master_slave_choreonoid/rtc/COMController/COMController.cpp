@@ -35,6 +35,7 @@ RTC::ReturnCode_t COMController::onInitialize(){
   addInPort("basePoseComIn", this->ports_.m_basePoseComIn_);
   addOutPort("primitiveStateComOut", this->ports_.m_primitiveStateComOut_);
   addOutPort("verticesOut", this->ports_.m_verticesOut_);
+  addOutPort("previewVerticesOut", this->ports_.m_previewVerticesOut_);
   this->ports_.m_COMControllerServicePort_.registerProvider("service0", "COMControllerService", this->ports_.m_service0_);
   addPort(this->ports_.m_COMControllerServicePort_);
 
@@ -149,7 +150,17 @@ void COMController::passThrough(const std::string& instance_name, const cnoid::B
 void COMController::preProcessForControl(const std::string& instance_name) {
 }
 
-void COMController::calcOutputPorts(const std::string& instance_name, COMController::Ports& port, const cnoid::Vector3 prevCOMCom, bool isRunning, std::vector<Eigen::Vector2d>& vertices, double dt, const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
+void COMController::calcOutputPorts(const std::string& instance_name,
+                              COMController::Ports& port,
+                              const cnoid::Vector3 prevCOMCom,
+                              const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
+                              const Eigen::VectorXd& l,
+                              const Eigen::VectorXd& u,
+                              bool isRunning,
+                              std::vector<Eigen::Vector2d>& vertices,
+                              std::vector<Eigen::Vector2d>& previewVertices,
+                              double dt,
+                              const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
   // primitiveState
   port.m_primitiveStateCom_ = port.m_primitiveStateRef_;
   for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
@@ -185,7 +196,6 @@ void COMController::calcOutputPorts(const std::string& instance_name, COMControl
     port.m_primitiveStateCom_.data[comIdx].localPose.orientation.y=0.0;
     port.m_primitiveStateCom_.data[comIdx].supportCOM = false;
     port.m_primitiveStateCom_.data[comIdx].isWrenchCGlobal = false;
-    port.m_primitiveStateCom_.data[comIdx].isPoseCGlobal = false;
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrench[i] = 0.0;
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].M[i] = 0.0;
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].D[i] = 0.0;
@@ -196,6 +206,7 @@ void COMController::calcOutputPorts(const std::string& instance_name, COMControl
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrenchFollowGain[i] = 0.0;
   }
   if(comIdx!=-1){
+    // position
     port.m_primitiveStateCom_.data[comIdx].time = dt;
     port.m_primitiveStateCom_.data[comIdx].pose.position.x=prevCOMCom[0];
     port.m_primitiveStateCom_.data[comIdx].pose.position.y=prevCOMCom[1];
@@ -203,6 +214,19 @@ void COMController::calcOutputPorts(const std::string& instance_name, COMControl
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.r=0.0;
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.p=0.0;
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.y=0.0;
+
+    // cfr
+    port.m_primitiveStateCom_.data[comIdx].poseC.length(M.rows());
+    port.m_primitiveStateCom_.data[comIdx].poseld.length(l.rows());
+    port.m_primitiveStateCom_.data[comIdx].poseud.length(u.rows());
+    cnoid::MatrixXd Mdense = M;
+    for(int i=0;i<M.rows();i++){
+      for(int j=0;j<2;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = Mdense(i,j);
+      for(int j=2;j<6;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = 0.0;
+      port.m_primitiveStateCom_.data[comIdx].poseld[i] = std::max(l[i],-1e10); // 大きすぎると後のコンポーネントの処理でオーバーフローする
+      port.m_primitiveStateCom_.data[comIdx].poseud[i] = std::min(u[i],1e10);
+    }
+    port.m_primitiveStateCom_.data[comIdx].isPoseCGlobal = true;
   }
 
   port.m_primitiveStateComOut_.write();
@@ -214,6 +238,14 @@ void COMController::calcOutputPorts(const std::string& instance_name, COMControl
     for(int j=0;j<2;j++) port.m_vertices_.data[i*2+j] = vertices[i][j];
   }
   port.m_verticesOut_.write();
+
+  // vertices
+  port.m_previewVertices_.tm = port.m_primitiveStateRef_.tm;
+  port.m_previewVertices_.data.length(previewVertices.size()*2);
+  for(int i=0;i<previewVertices.size();i++){
+    for(int j=0;j<2;j++) port.m_previewVertices_.data[i*2+j] = previewVertices[i][j];
+  }
+  port.m_previewVerticesOut_.write();
 
 }
 
@@ -234,24 +266,19 @@ RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
   Eigen::SparseMatrix<double,Eigen::RowMajor> M(0,2);
   Eigen::VectorXd l;
   Eigen::VectorXd u;
-  std::vector<Eigen::Vector2d> vertices;
+  std::vector<Eigen::Vector2d> vertices, previewVertices;
   if(this->mode_.isRunning()) {
     if(this->mode_.isInitialize()){
       COMController::preProcessForControl(instance_name);
     }
 
-    // if(cFRCalculator_.computeCOM(this->primitiveStateMap_, this->robot_, this->debugLevel_)){
-    //   M = this->cFRCalculator_.M();
-    //   l = this->cFRCalculator_.l()+cnoid::VectorX::Ones(this->cFRCalculator_.l().size())*this->regionMargin_;
-    //   u = this->cFRCalculator_.u()-cnoid::VectorX::Ones(this->cFRCalculator_.u().size())*this->regionMargin_;
-    //   vertices = this->cFRCalculator_.vertices();
-    // }
+    this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->prevCOMCom_, M, l, u, vertices, previewVertices);
   }else{
     COMController::passThrough(instance_name, this->robot_com_, this->outputCOMOffsetInterpolator_, this->primitiveStates_, dt, this->prevCOMCom_);
   }
 
   // write outport
-  COMController::calcOutputPorts(instance_name, this->ports_, this->prevCOMCom_, this->mode_.isRunning(), vertices, dt, this->primitiveStates_);
+  COMController::calcOutputPorts(instance_name, this->ports_, this->prevCOMCom_, M, l, u, this->mode_.isRunning(), vertices, previewVertices, dt, this->primitiveStates_);
 
   this->loop_++;
   return RTC::RTC_OK;

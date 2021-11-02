@@ -22,6 +22,7 @@
 #include <primitive_motion_level_msgs/idl/PrimitiveState.hh>
 #include <primitive_motion_level_tools/PrimitiveState.h>
 #include "COMControllerService_impl.h"
+#include "SCFRController.h"
 
 class COMController : public RTC::DataFlowComponentBase{
 public:
@@ -35,6 +36,7 @@ public:
 
       m_primitiveStateComOut_("primitiveStateComOut", m_primitiveStateCom_),
       m_verticesOut_("verticesOut", m_vertices_),
+      m_previewVerticesOut_("previewVerticesOut", m_previewVertices_),
 
       m_COMControllerServicePort_("COMControllerService") {
     }
@@ -52,6 +54,8 @@ public:
     RTC::OutPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateComOut_;
     RTC::TimedDoubleSeq m_vertices_;
     RTC::OutPort<RTC::TimedDoubleSeq> m_verticesOut_;
+    RTC::TimedDoubleSeq m_previewVertices_;
+    RTC::OutPort<RTC::TimedDoubleSeq> m_previewVerticesOut_;
 
     COMControllerService_impl m_service0_;
     RTC::CorbaPort m_COMControllerServicePort_;
@@ -119,6 +123,8 @@ protected:
   // params
   double regionMargin_;
 
+  whole_body_master_slave_choreonoid::SCFRController scfrController_;
+
   // static functions
   static void getPrimitiveState(const std::string& instance_name, COMController::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates);
   static void getPreviewPrimitiveState(const std::string& instance_name, COMController::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStatesSequence& previewPrimitiveStates);
@@ -126,7 +132,17 @@ protected:
   static void processModeTransition(const std::string& instance_name, COMController::ControlMode& mode, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const cnoid::Vector3& prevCOMCom, const primitive_motion_level_tools::PrimitiveStates& primitiveStates);
   static void passThrough(const std::string& instance_name, const cnoid::BodyPtr& robot_com, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, double dt, cnoid::Vector3& prevCOMCom);
   static void preProcessForControl(const std::string& instance_name);
-  static void calcOutputPorts(const std::string& instance_name, COMController::Ports& port, const cnoid::Vector3 prevCOMCom, bool isRunning, std::vector<Eigen::Vector2d>& vertices, double dt, const primitive_motion_level_tools::PrimitiveStates& primitiveStates);
+  static void calcOutputPorts(const std::string& instance_name,
+                              COMController::Ports& port,
+                              const cnoid::Vector3 prevCOMCom,
+                              const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
+                              const Eigen::VectorXd& l,
+                              const Eigen::VectorXd& u,
+                              bool isRunning,
+                              std::vector<Eigen::Vector2d>& vertices,
+                              std::vector<Eigen::Vector2d>& previewVertices,
+                              double dt,
+                              const primitive_motion_level_tools::PrimitiveStates& primitiveStates);
 };
 
 
