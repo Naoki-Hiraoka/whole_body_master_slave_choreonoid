@@ -17,5 +17,6 @@
   <depend>primitive_motion_level_msgs</depend>
   <depend>primitive_motion_level_tools</depend>
   <depend>cfr_calculator</depend>
+  <depend>cpp_filters</depend>
 
 </package>

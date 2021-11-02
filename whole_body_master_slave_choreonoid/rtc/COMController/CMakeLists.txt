@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   primitive_motion_level_msgs
   primitive_motion_level_tools
   static_equilibuim_test
+  cpp_filters
   )
 find_package(choreonoid REQUIRED)
 
