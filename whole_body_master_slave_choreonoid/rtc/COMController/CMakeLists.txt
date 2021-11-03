@@ -11,8 +11,11 @@ find_package(catkin REQUIRED COMPONENTS
   primitive_motion_level_tools
   cfr_calculator
   cpp_filters
+  prioritized_qp
+  prioritized_qp_base
   )
 find_package(choreonoid REQUIRED)
+find_package(OsqpEigen REQUIRED)
 
 include_directories(
   ${catkin_INCLUDE_DIRS}
@@ -34,6 +37,7 @@ rtmbuild_add_library(COMController SHARED
 target_link_libraries(COMController
   ${catkin_LIBRARIES}
   ${CHOREONOID_BODY_LIBRARIES_ABS}
+  OsqpEigen::OsqpEigen
   )
 set_target_properties(COMController PROPERTIES PREFIX "")
 add_dependencies(COMController RTMBUILD_${PROJECT_NAME}_genrpc) # wait for rtmbuild_genidl

@@ -214,6 +214,8 @@ void COMController::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.r=0.0;
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.p=0.0;
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.y=0.0;
+    if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] == 0.0) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] = 1.0;
+    if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] == 0.0) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] = 1.0;
 
     // cfr
     port.m_primitiveStateCom_.data[comIdx].poseC.length(M.rows());
