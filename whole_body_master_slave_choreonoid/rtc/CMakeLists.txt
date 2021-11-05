@@ -1,2 +1,3 @@
 add_subdirectory(CFRController)
 add_subdirectory(COMController)
+add_subdirectory(SupportEEFFixer)

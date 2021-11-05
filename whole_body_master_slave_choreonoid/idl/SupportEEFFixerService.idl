@@ -1,0 +1,18 @@
+#include "ExtendedDataTypes.idl" // openrtm
+
+module whole_body_master_slave_choreonoid
+{
+  interface SupportEEFFixerService
+  {
+    struct SupportEEFFixerParam
+    {
+      long debugLevel;
+      double regionMargin;
+    };
+    void setParams(in SupportEEFFixerParam i_param);
+    void getParams(out SupportEEFFixerParam i_param);
+
+    boolean startControl();
+    boolean stopControl();
+  };
+};
