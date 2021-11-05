@@ -48,11 +48,11 @@ RTC::ReturnCode_t PrimitiveStateFSensorWriter::onInitialize(){
   }
 
   {
-    std::string sensor_pairStr;
-    if(this->getProperties().hasKey("sensor_pair")) sensor_pairStr = std::string(this->getProperties()["sensor_pair"]);
-    else sensor_pairStr = std::string(this->m_pManager->getConfig()["sensor_pair"]); // 引数 -o で与えたプロパティを捕捉
-    std::cerr << "[" << this->m_profile.instance_name << "] sensor_pair: " << sensor_pairStr <<std::endl;
-    std::stringstream ss(sensor_pairStr);
+    std::string paired_sensorStr;
+    if(this->getProperties().hasKey("paired_sensor")) paired_sensorStr = std::string(this->getProperties()["paired_sensor"]);
+    else paired_sensorStr = std::string(this->m_pManager->getConfig()["paired_sensor"]); // 引数 -o で与えたプロパティを捕捉
+    std::cerr << "[" << this->m_profile.instance_name << "] paired_sensor: " << paired_sensorStr <<std::endl;
+    std::stringstream ss(paired_sensorStr);
     std::string item;
     while (std::getline(ss, item, ',')) {
       std::stringstream ss2(item);
@@ -69,9 +69,10 @@ RTC::ReturnCode_t PrimitiveStateFSensorWriter::onInitialize(){
 
   {
     cnoid::DeviceList<cnoid::ForceSensor> fsensors = this->robot_act_->devices<cnoid::ForceSensor>();
+    this->ports_.m_wrenches_.resize(fsensors.size());
+    this->ports_.m_wrenchesIn_.resize(fsensors.size());
     for(int i=0;i<fsensors.size();i++){
-      this->ports_.m_wrenches_.push_back(RTC::TimedDoubleSeq());
-      this->ports_.m_wrenchesIn_.push_back(std::make_shared<RTC::InPort<RTC::TimedDoubleSeq> >(fsensors[i]->name().c_str(),this->ports_.m_wrenches_[i]));
+      this->ports_.m_wrenchesIn_[i] = std::make_shared<RTC::InPort<RTC::TimedDoubleSeq> >(fsensors[i]->name().c_str(),this->ports_.m_wrenches_[i]);
       addInPort(fsensors[i]->name().c_str(), *(this->ports_.m_wrenchesIn_[i]));
     }
   }
@@ -163,12 +164,10 @@ RTC::ReturnCode_t PrimitiveStateFSensorWriter::onExecute(RTC::UniqueId ec_id){
 
   std::string instance_name = std::string(this->m_profile.instance_name);
   double dt = 1.0 / this->get_context(ec_id)->get_rate();
-
   // read ports
   PrimitiveStateFSensorWriter::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStates_);
   PrimitiveStateFSensorWriter::getActualRobot(instance_name, this->ports_, this->robot_act_);
   PrimitiveStateFSensorWriter::getForceSensorData(instance_name, this->ports_, this->robot_act_);
-
   // write outport
   PrimitiveStateFSensorWriter::calcOutputPorts(instance_name, this->sensorMap_, this->primitiveStates_, this->robot_act_, dt, this->ports_);
 
