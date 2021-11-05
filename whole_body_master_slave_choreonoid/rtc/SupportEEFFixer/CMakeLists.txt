@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   cpp_filters
   prioritized_qp
   prioritized_qp_base
+  ik_constraint
   )
 find_package(choreonoid REQUIRED)
 find_package(OsqpEigen REQUIRED)

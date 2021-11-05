@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <time.h>
+#include <mutex>
 
 #include <rtm/idl/BasicDataType.hh>
 #include <rtm/idl/ExtendedDataTypes.hh>
@@ -105,8 +106,10 @@ public:
   bool stopControl();
   bool setParams(const whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param);
   bool getParams(whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param);
+  void applyWrenchDistributionControl(double transitionTime);
 
 protected:
+  std::mutex mutex_;
 
   unsigned int debugLevel_;
   unsigned int loop_;
@@ -117,6 +120,7 @@ protected:
   cnoid::BodyPtr robot_act_;
   cnoid::BodyPtr robot_com_; // 下位より
   std::vector<std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<double> > > tauActFilter_;
+  std::vector<double> pgain_;
 
   // portから受け取ったprimitive motion level 指令
   primitive_motion_level_tools::PrimitiveStates primitiveStatesRef_;
@@ -128,6 +132,7 @@ protected:
   whole_body_master_slave_choreonoid::InternalWrenchController internalWrenchController_;
 
   // params
+  std::vector<cnoid::LinkPtr> useJoints_;
 
   // static functions
   static void getCommandRobot(const std::string& instance_name, SupportEEFFixer::Ports& port, cnoid::BodyPtr& robot);

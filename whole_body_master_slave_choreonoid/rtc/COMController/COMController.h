@@ -4,6 +4,7 @@
 #include <memory>
 #include <map>
 #include <time.h>
+#include <mutex>
 
 #include <rtm/idl/BasicDataType.hh>
 #include <rtm/idl/ExtendedDataTypes.hh>
@@ -104,6 +105,7 @@ public:
   bool getParams(whole_body_master_slave_choreonoid::COMControllerService::COMControllerParam& i_param);
 
 protected:
+  std::mutex mutex_;
 
   unsigned int debugLevel_;
   unsigned int loop_;

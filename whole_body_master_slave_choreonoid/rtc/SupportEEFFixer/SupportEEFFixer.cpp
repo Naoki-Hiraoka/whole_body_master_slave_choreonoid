@@ -52,6 +52,22 @@ RTC::ReturnCode_t SupportEEFFixer::onInitialize(){
   }
   this->robot_act_ = this->robot_com_->clone();
 
+  {
+    std::string hardware_pgainStr;
+    if(this->getProperties().hasKey("hardware_pgain")) hardware_pgainStr = std::string(this->getProperties()["hardware_pgain"]);
+    else hardware_pgainStr = std::string(this->m_pManager->getConfig()["hardware_pgain"]); // 引数 -o で与えたプロパティを捕捉
+    std::cerr << "[" << this->m_profile.instance_name << "] hardware_pgain: " << hardware_pgainStr <<std::endl;
+    std::stringstream ss(hardware_pgainStr);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+      this->pgain_.push_back(std::stod(item));
+    }
+    if(this->pgain_.size() != this->robot_com_->numJoints()){
+      std::cerr << "\x1b[31m[" << m_profile.instance_name << "] " << "hardware_pgain dimension mismatch (" << this->pgain_.size() << " vs " << this->robot_com_->numJoints() << " ) \x1b[39m" << std::endl;
+      return RTC::RTC_ERROR;
+    }
+  }
+
   for(int i=0;i<this->robot_act_->numJoints();i++){
     double climit, gearRatio, torqueConst;
     if(!this->robot_act_->joint(i)->info()->read("climit",climit) ||
@@ -67,6 +83,8 @@ RTC::ReturnCode_t SupportEEFFixer::onInitialize(){
   for(int i=0;i<this->robot_act_->numJoints();i++){
     tauActFilter_.push_back(std::make_shared<cpp_filters::FirstOrderLowPassFilter<double> >(1.0, 0.0));
   }
+
+  for(int i=0;i<this->robot_act_->numJoints();i++) this->useJoints_.push_back(this->robot_act_->joint(i));
 
   this->loop_ = 0;
 
@@ -128,11 +146,15 @@ void SupportEEFFixer::calcActualRobot(const std::string& instance_name, SupportE
   if(port.m_imuActIn_.isNew()){
     port.m_imuActIn_.read();
     robot->calcForwardKinematics();
-    cnoid::AccelerationSensorPtr imu = robot->findDevice<cnoid::AccelerationSensor>("gyrometer");
-    cnoid::Matrix3 imuR = imu->link()->R() * imu->R_local();
-    cnoid::Matrix3 actR = cnoid::rotFromRpy(port.m_imuAct_.data.r, port.m_imuAct_.data.p, port.m_imuAct_.data.y);
-    robot->rootLink()->R() = actR * (imuR.transpose() * robot->rootLink()->R());
-    updated = true;
+    cnoid::AccelerationSensorPtr imu = robot->findDevice<cnoid::AccelerationSensor>("gsensor");
+    if(!imu){
+      std::cerr << "\x1b[31m[" << instance_name << "] " << "gyrometer not found" << "\x1b[39m" << std::endl;
+    }else{
+      cnoid::Matrix3 imuR = imu->link()->R() * imu->R_local();
+      cnoid::Matrix3 actR = cnoid::rotFromRpy(port.m_imuAct_.data.r, port.m_imuAct_.data.p, port.m_imuAct_.data.y);
+      robot->rootLink()->R() = Eigen::Matrix3d(Eigen::AngleAxisd(actR * (imuR.transpose() * robot->rootLink()->R()))); // そのまま積算しているとだんだんユニタリ行列でなくなってくる恐れがあるので
+      updated = true;
+    }
   }
 
   if(port.m_tauActIn_.isNew()){
@@ -243,6 +265,7 @@ void SupportEEFFixer::calcOutputPorts(const std::string& instance_name,
 }
 
 RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
+  std::lock_guard<std::mutex> guard(this->mutex_);
 
   std::string instance_name = std::string(this->m_profile.instance_name);
   double dt = 1.0 / this->get_context(ec_id)->get_rate();
@@ -259,7 +282,7 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
   if(this->mode_.isRunning()) {
     SupportEEFFixer::addOrRemoveFixedEEFMap(instance_name, this->robot_com_, this->primitiveStatesRef_, this->fixedPoseMap_, newFixedEEF);
 
-    // this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->prevCOMCom_, M, l, u, vertices, previewVertices, this->debugLevel_);
+    this->internalWrenchController_.control(this->primitiveStatesRef_, this->robot_act_, this->pgain_, this->useJoints_, dt, this->debugLevel_, this->fixedPoseMap_);
   }else{
 
   }
@@ -296,8 +319,16 @@ bool SupportEEFFixer::stopControl(){
 }
 
 bool SupportEEFFixer::setParams(const whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param){
+  std::lock_guard<std::mutex> guard(this->mutex_);
   std::cerr << "[" << m_profile.instance_name << "] "<< "setParams" << std::endl;
   this->debugLevel_ = i_param.debugLevel;
+
+  this->useJoints_.clear();
+  for(int i=0;i<i_param.useJoints.length();i++){
+    cnoid::LinkPtr link = this->robot_act_->link(std::string(i_param.useJoints[i]));
+    if(link && link->jointId()>=0) this->useJoints_.push_back(link);
+  }
+
   return true;
 }
 
@@ -305,7 +336,14 @@ bool SupportEEFFixer::setParams(const whole_body_master_slave_choreonoid::Suppor
 bool SupportEEFFixer::getParams(whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param){
   std::cerr << "[" << m_profile.instance_name << "] "<< "getParams" << std::endl;
   i_param.debugLevel = this->debugLevel_;
+  i_param.useJoints.length(this->useJoints_.size());
+  for(int i=0;i<this->useJoints_.size();i++) i_param.useJoints[i] = this->useJoints_[i]->name().c_str();
   return true;
+}
+
+void SupportEEFFixer::applyWrenchDistributionControl(double transitionTime) {
+  std::lock_guard<std::mutex> guard(this->mutex_);
+  this->internalWrenchController_.start(transitionTime);
 }
 
 RTC::ReturnCode_t SupportEEFFixer::onActivated(RTC::UniqueId ec_id){

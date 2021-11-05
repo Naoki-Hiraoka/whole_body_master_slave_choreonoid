@@ -7,12 +7,14 @@ module whole_body_master_slave_choreonoid
     struct SupportEEFFixerParam
     {
       long debugLevel;
-      double regionMargin;
+      sequence<string> useJoints;
     };
     void setParams(in SupportEEFFixerParam i_param);
     void getParams(out SupportEEFFixerParam i_param);
 
     boolean startControl();
     boolean stopControl();
+
+    void applyWrenchDistributionControl(in double transitionTime);
   };
 };

@@ -204,6 +204,7 @@ void COMController::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] = 1.0;
     for(int i=2;i<6;i++) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[i] = 0.0;
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrenchFollowGain[i] = 0.0;
+    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].actWrench[i] = 0.0;
   }
   if(comIdx!=-1){
     // position
@@ -252,6 +253,7 @@ void COMController::calcOutputPorts(const std::string& instance_name,
 }
 
 RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
+  std::lock_guard<std::mutex> guard(this->mutex_);
 
   std::string instance_name = std::string(this->m_profile.instance_name);
   double dt = 1.0 / this->get_context(ec_id)->get_rate();
@@ -311,6 +313,7 @@ bool COMController::stopControl(){
 }
 
 bool COMController::setParams(const whole_body_master_slave_choreonoid::COMControllerService::COMControllerParam& i_param){
+  std::lock_guard<std::mutex> guard(this->mutex_);
   std::cerr << "[" << m_profile.instance_name << "] "<< "setParams" << std::endl;
   this->debugLevel_ = i_param.debugLevel;
   this->regionMargin_ = i_param.regionMargin;

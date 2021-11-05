@@ -17,6 +17,7 @@ public:
   CORBA::Boolean stopControl();
   void setParams(const whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param);
   void getParams(whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam_out i_param);
+  void applyWrenchDistributionControl(CORBA::Double transitionTime);
   //
   void setComp(SupportEEFFixer *i_comp);
 private:

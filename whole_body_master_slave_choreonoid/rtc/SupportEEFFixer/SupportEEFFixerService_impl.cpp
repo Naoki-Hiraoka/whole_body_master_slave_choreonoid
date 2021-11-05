@@ -31,7 +31,10 @@ void SupportEEFFixerService_impl::setParams(const whole_body_master_slave_choreo
 
 void SupportEEFFixerService_impl::getParams(whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam_out i_param)
 {
-  i_param = whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam();
-  comp_->getParams(i_param);
+  i_param = new whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam();
+  comp_->getParams(*i_param);
 };
 
+void SupportEEFFixerService_impl::applyWrenchDistributionControl(CORBA::Double transitionTime) {
+  comp_->applyWrenchDistributionControl(transitionTime);
+}
