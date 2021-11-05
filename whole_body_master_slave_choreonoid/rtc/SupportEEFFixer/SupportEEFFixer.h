@@ -2,7 +2,8 @@
 #define SupportEEFFixer_H
 
 #include <memory>
-#include <map>
+#include <unordered_map>
+#include <unordered_set>
 #include <time.h>
 
 #include <rtm/idl/BasicDataType.hh>
@@ -29,21 +30,16 @@ public:
   public:
     Ports() :
       m_primitiveStateRefIn_("primitiveStateRefIn", m_primitiveStateRef_),
-      m_previewPrimitiveStateRefIn_("previewPrimitiveStateRefIn", m_previewPrimitiveStateRef_),
       m_qComIn_("qComIn", m_qCom_),
       m_basePoseComIn_("basePoseComIn", m_basePoseCom_),
 
       m_primitiveStateComOut_("primitiveStateComOut", m_primitiveStateCom_),
-      m_verticesOut_("verticesOut", m_vertices_),
-      m_previewVerticesOut_("previewVerticesOut", m_previewVertices_),
 
       m_SupportEEFFixerServicePort_("SupportEEFFixerService") {
     }
 
     primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateRef_;
     RTC::InPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateRefIn_;
-    primitive_motion_level_msgs::TimedPrimitiveStateSeqSeq m_previewPrimitiveStateRef_;
-    RTC::InPort <primitive_motion_level_msgs::TimedPrimitiveStateSeqSeq> m_previewPrimitiveStateRefIn_;
     RTC::TimedDoubleSeq m_qCom_;
     RTC::InPort<RTC::TimedDoubleSeq> m_qComIn_;
     RTC::TimedPose3D m_basePoseCom_;
@@ -51,10 +47,6 @@ public:
 
     primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateCom_;
     RTC::OutPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateComOut_;
-    RTC::TimedDoubleSeq m_vertices_;
-    RTC::OutPort<RTC::TimedDoubleSeq> m_verticesOut_;
-    RTC::TimedDoubleSeq m_previewVertices_;
-    RTC::OutPort<RTC::TimedDoubleSeq> m_previewVerticesOut_;
 
     SupportEEFFixerService_impl m_service0_;
     RTC::CorbaPort m_SupportEEFFixerServicePort_;
@@ -111,35 +103,29 @@ protected:
   ControlMode mode_;
 
   cnoid::BodyPtr robot_com_; // 下位より
-  cnoid::Vector3 prevCOMCom_; // 前回の出力
 
   // portから受け取ったprimitive motion level 指令
-  primitive_motion_level_tools::PrimitiveStates primitiveStates_;// 現在
-  primitive_motion_level_tools::PrimitiveStatesSequence previewPrimitiveStates_;//将来
+  primitive_motion_level_tools::PrimitiveStates primitiveStatesRef_;
 
-  std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> > outputCOMOffsetInterpolator_;
+  // SupportEEFのtargetPoseをこの値で上書きする
+  std::unordered_map<std::string, cnoid::Position> fixedPoseMap_;
+  std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > > outputOffsetInterpolator_; // stopControlしたときに使う
 
   // params
-  double regionMargin_;
 
   // static functions
-  static void getPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates);
-  static void getPreviewPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStatesSequence& previewPrimitiveStates);
   static void getCommandRobot(const std::string& instance_name, SupportEEFFixer::Ports& port, cnoid::BodyPtr& robot);
-  static void processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const cnoid::Vector3& prevCOMCom, const primitive_motion_level_tools::PrimitiveStates& primitiveStates);
-  static void passThrough(const std::string& instance_name, const cnoid::BodyPtr& robot_com, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, double dt, cnoid::Vector3& prevCOMCom);
-  static void preProcessForControl(const std::string& instance_name);
+  static void getPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates);
+  static void processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates);
+  static void addOrRemoveFixedEEFMap(const std::string& instance_name, const cnoid::BodyPtr& robot_com, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_set<std::string>& newFixedEEF);
   static void calcOutputPorts(const std::string& instance_name,
                               SupportEEFFixer::Ports& port,
-                              const cnoid::Vector3 prevCOMCom,
-                              const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
-                              const Eigen::VectorXd& l,
-                              const Eigen::VectorXd& u,
                               bool isRunning,
-                              std::vector<Eigen::Vector2d>& vertices,
-                              std::vector<Eigen::Vector2d>& previewVertices,
                               double dt,
-                              const primitive_motion_level_tools::PrimitiveStates& primitiveStates);
+                              const std::unordered_map<std::string, cnoid::Position>& fixedPoseMap,
+                              std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator,
+                              const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
+                              const std::unordered_set<std::string>& newFixedEEF);
 };
 
 

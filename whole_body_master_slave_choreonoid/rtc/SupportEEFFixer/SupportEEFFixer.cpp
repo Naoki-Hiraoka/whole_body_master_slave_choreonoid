@@ -30,12 +30,9 @@ SupportEEFFixer::SupportEEFFixer(RTC::Manager* manager) : RTC::DataFlowComponent
 RTC::ReturnCode_t SupportEEFFixer::onInitialize(){
 
   addInPort("primitiveStateRefIn", this->ports_.m_primitiveStateRefIn_);
-  addInPort("previewPrimitiveStateRefIn", this->ports_.m_previewPrimitiveStateRefIn_);
   addInPort("qComIn", this->ports_.m_qComIn_);
   addInPort("basePoseComIn", this->ports_.m_basePoseComIn_);
   addOutPort("primitiveStateComOut", this->ports_.m_primitiveStateComOut_);
-  addOutPort("verticesOut", this->ports_.m_verticesOut_);
-  addOutPort("previewVerticesOut", this->ports_.m_previewVerticesOut_);
   this->ports_.m_SupportEEFFixerServicePort_.registerProvider("service0", "SupportEEFFixerService", this->ports_.m_service0_);
   addPort(this->ports_.m_SupportEEFFixerServicePort_);
 
@@ -53,10 +50,6 @@ RTC::ReturnCode_t SupportEEFFixer::onInitialize(){
   this->loop_ = 0;
 
   this->mode_.setNextMode(ControlMode::MODE_IDLE);
-
-  this->outputCOMOffsetInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);
-
-  this->regionMargin_ = 0.02;
 
   return RTC::RTC_OK;
 }
@@ -97,34 +90,25 @@ void SupportEEFFixer::getPrimitiveState(const std::string& instance_name, Suppor
   primitiveStates.updateTargetForOneStep(dt);
 }
 
-void SupportEEFFixer::getPreviewPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStatesSequence& PrimitiveStatesSequence) {
-  if(port.m_previewPrimitiveStateRefIn_.isNew()) {
-    port.m_previewPrimitiveStateRefIn_.read();
-
-    PrimitiveStatesSequence.updateFromIdl(port.m_previewPrimitiveStateRef_);
-  }else{
-    // 時刻をdtはやめる
-    PrimitiveStatesSequence.updateTargetForOneStep(dt);
-  }
-}
-
-void SupportEEFFixer::processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const cnoid::Vector3& prevCOMCom, const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
+void SupportEEFFixer::processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
   switch(mode.now()){
   case SupportEEFFixer::ControlMode::MODE_SYNC_TO_CONTROL:
     mode.setNextMode(SupportEEFFixer::ControlMode::MODE_CONTROL);
     break;
   case SupportEEFFixer::ControlMode::MODE_SYNC_TO_IDLE:
     if(mode.pre() == SupportEEFFixer::ControlMode::MODE_CONTROL){
-      std::shared_ptr<primitive_motion_level_tools::PrimitiveState> primitiveState = nullptr;
-      for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveStates.primitiveState().begin(); it != primitiveStates.primitiveState().end() ;it++){
-        if(it->second->name() == "com") primitiveState = it->second;
+      outputOffsetInterpolator.clear();
+      for(std::unordered_map<std::string, cnoid::Position>::iterator it = fixedPoseMap.begin(); it != fixedPoseMap.end() ;it++){
+        if(primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end()) continue;
+        const cnoid::Position& poseRef = primitiveStates.primitiveState().find(it->first)->second->targetPose();
+        std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > interpolator;
+        interpolator.first = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(it->second.translation() - poseRef.translation(), cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);
+        interpolator.first->setGoal(cnoid::Vector3::Zero(), 3.0);
+        interpolator.second = std::make_shared<cpp_filters::TwoPointInterpolatorSO3>(it->second.linear() * poseRef.linear().transpose(), cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);
+        interpolator.second->setGoal(cnoid::Matrix3::Identity(), 3.0);
+        outputOffsetInterpolator[it->first] = interpolator;
       }
-      if(primitiveState){
-        outputCOMOffsetInterpolator->reset(prevCOMCom-primitiveState->targetPose().translation(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero());
-        outputCOMOffsetInterpolator->setGoal(cnoid::Vector3::Zero(), 3.0);
-      }else{
-        outputCOMOffsetInterpolator->reset(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero());
-      }
+      fixedPoseMap.clear();
     }
     mode.setNextMode(SupportEEFFixer::ControlMode::MODE_IDLE);
     break;
@@ -132,40 +116,61 @@ void SupportEEFFixer::processModeTransition(const std::string& instance_name, Su
   mode.update();
 }
 
-void SupportEEFFixer::passThrough(const std::string& instance_name, const cnoid::BodyPtr& robot_com, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, double dt, cnoid::Vector3& prevCOMCom){
-  std::shared_ptr<primitive_motion_level_tools::PrimitiveState> primitiveState = nullptr;
-  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveStates.primitiveState().begin(); it != primitiveStates.primitiveState().end() ;it++){
-    if(it->second->name() == "com") primitiveState = it->second;
+void SupportEEFFixer::addOrRemoveFixedEEFMap(const std::string& instance_name, const cnoid::BodyPtr& robot_com, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_set<std::string>& newFixedEEF) {
+  // 消滅したSupportEEFを削除
+  for(std::unordered_map<std::string, cnoid::Position >::iterator it = fixedPoseMap.begin(); it != fixedPoseMap.end(); ) {
+    if (primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end() ||
+        !primitiveStates.primitiveState().find(it->first)->second->supportCOM())
+      it = fixedPoseMap.erase(it);
+    else ++it;
   }
-  if(primitiveState){
-    cnoid::Vector3 offset = cnoid::Vector3::Zero();
-    if(outputCOMOffsetInterpolator->isEmpty()) outputCOMOffsetInterpolator->get(offset, dt);
-    prevCOMCom = primitiveState->targetPose().translation() + offset;
-  }else{
-    if(outputCOMOffsetInterpolator->isEmpty()) outputCOMOffsetInterpolator->reset(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero());
-    prevCOMCom = robot_com->centerOfMass();
-  }
-}
 
-void SupportEEFFixer::preProcessForControl(const std::string& instance_name) {
+  // 増加したSupportEEFの反映
+  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveStates.primitiveState().begin(); it != primitiveStates.primitiveState().end(); it++) {
+    if(it->second->supportCOM() && fixedPoseMap.find(it->first)==fixedPoseMap.end()){
+      cnoid::LinkPtr link = robot_com->link(it->second->parentLinkName());
+      if(link) {
+        fixedPoseMap[it->first] = link->T() * it->second->localPose();
+        newFixedEEF.insert(it->first);
+      }
+    }
+  }
 }
 
 void SupportEEFFixer::calcOutputPorts(const std::string& instance_name,
-                              SupportEEFFixer::Ports& port,
-                              const cnoid::Vector3 prevCOMCom,
-                              const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
-                              const Eigen::VectorXd& l,
-                              const Eigen::VectorXd& u,
-                              bool isRunning,
-                              std::vector<Eigen::Vector2d>& vertices,
-                              std::vector<Eigen::Vector2d>& previewVertices,
-                              double dt,
-                              const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
+                                      SupportEEFFixer::Ports& port,
+                                      bool isRunning,
+                                      double dt,
+                                      const std::unordered_map<std::string, cnoid::Position>& fixedPoseMap,
+                                      std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator,
+                                      const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
+                                      const std::unordered_set<std::string>& newFixedEEF){
   // primitiveState
   port.m_primitiveStateCom_ = port.m_primitiveStateRef_;
   for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
+    std::string name = std::string(port.m_primitiveStateCom_.data[i].name);
     if(port.m_primitiveStateCom_.data[i].time != 0.0) port.m_primitiveStateCom_.data[i].time = dt;
-    const cnoid::Position& targetPose = primitiveStates.primitiveState().find(std::string(port.m_primitiveStateCom_.data[i].name))->second->targetPose();
+    const cnoid::Vector6& targetWrench = primitiveStates.primitiveState().find(name)->second->targetWrench();
+    for(size_t j=0;j<6;j++) port.m_primitiveStateCom_.data[i].wrench[j] = targetWrench[j];
+
+    cnoid::Position targetPose;
+    if(fixedPoseMap.find(name) != fixedPoseMap.end()) {
+      targetPose = fixedPoseMap.find(name)->second;
+      if(newFixedEEF.find(name) != newFixedEEF.end()) port.m_primitiveStateCom_.data[i].time = 0.0;//ワープ
+    } else {
+      // reference の値を補間してそのまま流す
+      targetPose = primitiveStates.primitiveState().find(name)->second->targetPose();
+      // stopControl直後はoffsetを適用
+      if (outputOffsetInterpolator.find(name) != outputOffsetInterpolator.end()){
+        cnoid::Vector3 offsetp = cnoid::Vector3::Zero();
+        if (!outputOffsetInterpolator[name].first->isEmpty()) outputOffsetInterpolator[name].first->get(offsetp, dt);
+        targetPose.translation() = targetPose.translation() + offsetp;
+        cnoid::Matrix3 offsetR = cnoid::Matrix3d::Identity();
+        if (!outputOffsetInterpolator[name].second->isEmpty()) outputOffsetInterpolator[name].second->get(offsetR, dt);
+        targetPose.linear() = offsetR * targetPose.linear();
+        if(outputOffsetInterpolator[name].first->isEmpty() && outputOffsetInterpolator[name].second->isEmpty()) outputOffsetInterpolator.erase(name);
+      }
+    }
     port.m_primitiveStateCom_.data[i].pose.position.x = targetPose.translation()[0];
     port.m_primitiveStateCom_.data[i].pose.position.y = targetPose.translation()[1];
     port.m_primitiveStateCom_.data[i].pose.position.z = targetPose.translation()[2];
@@ -173,82 +178,8 @@ void SupportEEFFixer::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveStateCom_.data[i].pose.orientation.r = rpy[0];
     port.m_primitiveStateCom_.data[i].pose.orientation.p = rpy[1];
     port.m_primitiveStateCom_.data[i].pose.orientation.y = rpy[2];
-    const cnoid::Vector6& targetWrench = primitiveStates.primitiveState().find(std::string(port.m_primitiveStateCom_.data[i].name))->second->targetWrench();
-    for(size_t j=0;j<6;j++) port.m_primitiveStateCom_.data[i].wrench[j] = targetWrench[j];
   }
-
-  // com
-  int comIdx = -1;
-  for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
-    if(std::string(port.m_primitiveStateCom_.data[i].name) == "com") comIdx = i;
-  }
-  if(comIdx == -1 && isRunning){
-    // generate com task
-    comIdx = port.m_primitiveStateCom_.data.length();
-    port.m_primitiveStateCom_.data.length(port.m_primitiveStateCom_.data.length()+1);
-    port.m_primitiveStateCom_.data[comIdx].name="com";
-    port.m_primitiveStateCom_.data[comIdx].parentLinkName="com";
-    port.m_primitiveStateCom_.data[comIdx].localPose.position.x=0.0;
-    port.m_primitiveStateCom_.data[comIdx].localPose.position.y=0.0;
-    port.m_primitiveStateCom_.data[comIdx].localPose.position.z=0.0;
-    port.m_primitiveStateCom_.data[comIdx].localPose.orientation.r=0.0;
-    port.m_primitiveStateCom_.data[comIdx].localPose.orientation.p=0.0;
-    port.m_primitiveStateCom_.data[comIdx].localPose.orientation.y=0.0;
-    port.m_primitiveStateCom_.data[comIdx].supportCOM = false;
-    port.m_primitiveStateCom_.data[comIdx].isWrenchCGlobal = false;
-    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrench[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].M[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].D[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].K[i] = 0.0;
-    port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] = 1.0;
-    port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] = 1.0;
-    for(int i=2;i<6;i++) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[i] = 0.0;
-    for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrenchFollowGain[i] = 0.0;
-  }
-  if(comIdx!=-1){
-    // position
-    port.m_primitiveStateCom_.data[comIdx].time = dt;
-    port.m_primitiveStateCom_.data[comIdx].pose.position.x=prevCOMCom[0];
-    port.m_primitiveStateCom_.data[comIdx].pose.position.y=prevCOMCom[1];
-    port.m_primitiveStateCom_.data[comIdx].pose.position.z=prevCOMCom[2];
-    port.m_primitiveStateCom_.data[comIdx].pose.orientation.r=0.0;
-    port.m_primitiveStateCom_.data[comIdx].pose.orientation.p=0.0;
-    port.m_primitiveStateCom_.data[comIdx].pose.orientation.y=0.0;
-    if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] == 0.0) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] = 1.0;
-    if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] == 0.0) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] = 1.0;
-
-    // cfr
-    port.m_primitiveStateCom_.data[comIdx].poseC.length(M.rows());
-    port.m_primitiveStateCom_.data[comIdx].poseld.length(l.rows());
-    port.m_primitiveStateCom_.data[comIdx].poseud.length(u.rows());
-    cnoid::MatrixXd Mdense = M;
-    for(int i=0;i<M.rows();i++){
-      for(int j=0;j<2;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = Mdense(i,j);
-      for(int j=2;j<6;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = 0.0;
-      port.m_primitiveStateCom_.data[comIdx].poseld[i] = std::max(l[i],-1e10); // 大きすぎると後のコンポーネントの処理でオーバーフローする
-      port.m_primitiveStateCom_.data[comIdx].poseud[i] = std::min(u[i],1e10);
-    }
-    port.m_primitiveStateCom_.data[comIdx].isPoseCGlobal = true;
-  }
-
   port.m_primitiveStateComOut_.write();
-
-  // vertices
-  port.m_vertices_.tm = port.m_primitiveStateRef_.tm;
-  port.m_vertices_.data.length(vertices.size()*2);
-  for(int i=0;i<vertices.size();i++){
-    for(int j=0;j<2;j++) port.m_vertices_.data[i*2+j] = vertices[i][j];
-  }
-  port.m_verticesOut_.write();
-
-  // vertices
-  port.m_previewVertices_.tm = port.m_primitiveStateRef_.tm;
-  port.m_previewVertices_.data.length(previewVertices.size()*2);
-  for(int i=0;i<previewVertices.size();i++){
-    for(int j=0;j<2;j++) port.m_previewVertices_.data[i*2+j] = previewVertices[i][j];
-  }
-  port.m_previewVerticesOut_.write();
-
 }
 
 RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
@@ -257,30 +188,23 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
   double dt = 1.0 / this->get_context(ec_id)->get_rate();
 
   // read ports
-  SupportEEFFixer::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStates_);
-  SupportEEFFixer::getPreviewPrimitiveState(instance_name, this->ports_, dt, this->previewPrimitiveStates_);
+  SupportEEFFixer::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStatesRef_);
   SupportEEFFixer::getCommandRobot(instance_name, this->ports_, this->robot_com_);
 
   // mode遷移を実行
-  SupportEEFFixer::processModeTransition(instance_name, this->mode_, this->outputCOMOffsetInterpolator_, this->prevCOMCom_, this->primitiveStates_);
+  SupportEEFFixer::processModeTransition(instance_name, this->mode_, this->fixedPoseMap_, this->outputOffsetInterpolator_, this->primitiveStatesRef_);
 
-  // 重心world XY座標のFR
-  Eigen::SparseMatrix<double,Eigen::RowMajor> M(0,2);
-  Eigen::VectorXd l;
-  Eigen::VectorXd u;
-  std::vector<Eigen::Vector2d> vertices, previewVertices;
+  std::unordered_set<std::string> newFixedEEF;
   if(this->mode_.isRunning()) {
-    if(this->mode_.isInitialize()){
-      SupportEEFFixer::preProcessForControl(instance_name);
-    }
+    SupportEEFFixer::addOrRemoveFixedEEFMap(instance_name, this->robot_com_, this->primitiveStatesRef_, this->fixedPoseMap_, newFixedEEF);
 
     // this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->prevCOMCom_, M, l, u, vertices, previewVertices, this->debugLevel_);
   }else{
-    SupportEEFFixer::passThrough(instance_name, this->robot_com_, this->outputCOMOffsetInterpolator_, this->primitiveStates_, dt, this->prevCOMCom_);
+
   }
 
   // write outport
-  SupportEEFFixer::calcOutputPorts(instance_name, this->ports_, this->prevCOMCom_, M, l, u, this->mode_.isRunning(), vertices, previewVertices, dt, this->primitiveStates_);
+  SupportEEFFixer::calcOutputPorts(instance_name, this->ports_, this->mode_.isRunning(), dt, this->fixedPoseMap_, this->outputOffsetInterpolator_, this->primitiveStatesRef_, newFixedEEF);
 
   this->loop_++;
   return RTC::RTC_OK;
@@ -313,7 +237,6 @@ bool SupportEEFFixer::stopControl(){
 bool SupportEEFFixer::setParams(const whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param){
   std::cerr << "[" << m_profile.instance_name << "] "<< "setParams" << std::endl;
   this->debugLevel_ = i_param.debugLevel;
-  this->regionMargin_ = i_param.regionMargin;
   return true;
 }
 
@@ -321,7 +244,6 @@ bool SupportEEFFixer::setParams(const whole_body_master_slave_choreonoid::Suppor
 bool SupportEEFFixer::getParams(whole_body_master_slave_choreonoid::SupportEEFFixerService::SupportEEFFixerParam& i_param){
   std::cerr << "[" << m_profile.instance_name << "] "<< "getParams" << std::endl;
   i_param.debugLevel = this->debugLevel_;
-  i_param.regionMargin = this->regionMargin_;
   return true;
 }
 
