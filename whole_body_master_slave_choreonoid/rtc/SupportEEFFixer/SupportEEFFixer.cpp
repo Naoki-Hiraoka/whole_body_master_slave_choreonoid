@@ -119,14 +119,30 @@ void SupportEEFFixer::getCommandRobot(const std::string& instance_name, SupportE
 }
 
 
-void SupportEEFFixer::getPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates) {
+void SupportEEFFixer::getPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates, std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >& wrenchFilterMap) {
+  // primitivestates
   if(port.m_primitiveStateRefIn_.isNew()) {
     port.m_primitiveStateRefIn_.read();
     primitiveStates.updateFromIdl(port.m_primitiveStateRef_);
   }
-
   // 補間をdtすすめる
   primitiveStates.updateTargetForOneStep(dt);
+
+  // wrenchfilter
+  // 消滅したEEFを削除
+  for(std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >::iterator it = wrenchFilterMap.begin(); it != wrenchFilterMap.end(); ) {
+    if (primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end())
+      it = wrenchFilterMap.erase(it);
+    else ++it;
+  }
+  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveStates.primitiveState().begin(); it != primitiveStates.primitiveState().end(); it++) {
+    // 増加したEEFの反映
+    if(wrenchFilterMap.find(it->first)==wrenchFilterMap.end()){
+      wrenchFilterMap[it->first] = std::make_shared<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> >(1.0, it->second->actWrench());
+    }
+    // filter
+    wrenchFilterMap[it->first]->passFilter(it->second->actWrench(), dt);
+  }
 }
 
 void SupportEEFFixer::calcActualRobot(const std::string& instance_name, SupportEEFFixer::Ports& port, cnoid::BodyPtr& robot, std::vector<std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<double> >>& tauActFilter, double dt) {
@@ -271,7 +287,7 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
   double dt = 1.0 / this->get_context(ec_id)->get_rate();
 
   // read ports
-  SupportEEFFixer::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStatesRef_);
+  SupportEEFFixer::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStatesRef_, this->wrenchFilterMap_);
   SupportEEFFixer::getCommandRobot(instance_name, this->ports_, this->robot_com_);
   SupportEEFFixer::calcActualRobot(instance_name, this->ports_, this->robot_act_, this->tauActFilter_, dt);
 
@@ -282,7 +298,7 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
   if(this->mode_.isRunning()) {
     SupportEEFFixer::addOrRemoveFixedEEFMap(instance_name, this->robot_com_, this->primitiveStatesRef_, this->fixedPoseMap_, newFixedEEF);
 
-    this->internalWrenchController_.control(this->primitiveStatesRef_, this->robot_act_, this->pgain_, this->useJoints_, dt, this->debugLevel_, this->fixedPoseMap_);
+    this->internalWrenchController_.control(this->primitiveStatesRef_, this->wrenchFilterMap_, this->robot_act_, this->pgain_, this->useJoints_, dt, this->debugLevel_, this->fixedPoseMap_);
   }else{
 
   }

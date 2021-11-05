@@ -124,6 +124,7 @@ protected:
 
   // portから受け取ったprimitive motion level 指令
   primitive_motion_level_tools::PrimitiveStates primitiveStatesRef_;
+  std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > > wrenchFilterMap_;
 
   // SupportEEFのtargetPoseをこの値で上書きする
   std::unordered_map<std::string, cnoid::Position> fixedPoseMap_;
@@ -136,7 +137,7 @@ protected:
 
   // static functions
   static void getCommandRobot(const std::string& instance_name, SupportEEFFixer::Ports& port, cnoid::BodyPtr& robot);
-  static void getPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates);
+  static void getPrimitiveState(const std::string& instance_name, SupportEEFFixer::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates, std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >& wrenchFilterMap);
   static void calcActualRobot(const std::string& instance_name, SupportEEFFixer::Ports& port, cnoid::BodyPtr& robot, std::vector<std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<double> >>& tauActFilter, double dt);
   static void processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, whole_body_master_slave_choreonoid::InternalWrenchController& internalWrenchController);
   static void addOrRemoveFixedEEFMap(const std::string& instance_name, const cnoid::BodyPtr& robot_com, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_set<std::string>& newFixedEEF);

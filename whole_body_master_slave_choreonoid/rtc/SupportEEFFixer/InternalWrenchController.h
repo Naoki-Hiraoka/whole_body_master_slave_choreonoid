@@ -10,11 +10,13 @@
 #include <prioritized_qp_base/PrioritizedQPBaseSolver.h>
 #include <prioritized_qp/PrioritizedQPSolver.h>
 #include <ik_constraint/PositionConstraint.h>
+#include <cpp_filters/FirstOrderLowpassFilter.h>
 
 namespace whole_body_master_slave_choreonoid {
   class InternalWrenchController {
   public:
     void control(const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
+                 std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >& wrenchFilterMap,
                  const cnoid::BodyPtr& robot_act,
                  const std::vector<double>& pgain,
                  const std::vector<cnoid::LinkPtr>& useJoints,
@@ -27,6 +29,7 @@ namespace whole_body_master_slave_choreonoid {
     void reset() {startFlag_ = false; remainTime_ = 0.0; transitionVelocityMap_.clear(); positionConstraintMap_.clear();}
   protected:
     bool calcEEModification(const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
+                            std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >& wrenchFilterMap,
                             const cnoid::BodyPtr& robot_act,
                             const std::vector<double>& pgain,
                             const std::vector<cnoid::LinkPtr>& useJoints,
@@ -48,6 +51,7 @@ namespace whole_body_master_slave_choreonoid {
     std::shared_ptr<prioritized_qp::Task> tauLimitTask_;
     std::shared_ptr<prioritized_qp::Task> wrenchLimitTask_;
     std::shared_ptr<prioritized_qp::Task> wrenchTargetTask_;
+    std::shared_ptr<prioritized_qp::Task> taumaxDefineTask_;
     std::shared_ptr<prioritized_qp::Task> tauTargetTask_;
   };
 }

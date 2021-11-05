@@ -3,6 +3,7 @@
 
 namespace whole_body_master_slave_choreonoid {
   void InternalWrenchController::control(const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
+                                         std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >& wrenchFilterMap,
                                          const cnoid::BodyPtr& robot_act,
                                          const std::vector<double>& pgain,
                                          const std::vector<cnoid::LinkPtr>& useJoints,
@@ -13,7 +14,7 @@ namespace whole_body_master_slave_choreonoid {
     if(this->startFlag_) {
       // 修正量を計算
       this->startFlag_ = false;
-      if(this->calcEEModification(primitiveStates, robot_act, pgain, useJoints, fixedPoseMap, debugLevel)) this->remainTime_ = this->transitionTime_;
+      if(this->calcEEModification(primitiveStates, wrenchFilterMap, robot_act, pgain, useJoints, fixedPoseMap, debugLevel)) this->remainTime_ = this->transitionTime_;
     }
 
     // 補間が終了
@@ -49,6 +50,7 @@ namespace whole_body_master_slave_choreonoid {
   }
 
   bool InternalWrenchController::calcEEModification(const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
+                                                    std::unordered_map<std::string, std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<cnoid::Vector6> > >& wrenchFilterMap,
                                                     const cnoid::BodyPtr& robot_act,
                                                     const std::vector<double>& pgain,
                                                     const std::vector<cnoid::LinkPtr>& useJoints,
@@ -113,7 +115,7 @@ namespace whole_body_master_slave_choreonoid {
         b(i) = wrenchRef[i] * primitiveState->wrenchFollowGain()[i];
       }
       wrenchAs.push_back(A);
-      wrenchbs.push_back(b - A * primitiveState->actWrench());
+      wrenchbs.push_back(b - A * wrenchFilterMap[it->first]->getCurrentValue());
 
       Eigen::SparseMatrix<double, Eigen::RowMajor> C;
       if(primitiveState->isWrenchCGlobal()) {
@@ -122,8 +124,8 @@ namespace whole_body_master_slave_choreonoid {
         C = primitiveState->wrenchC();
       }
       wrenchCs.push_back(C);
-      wrenchdus.push_back(primitiveState->wrenchud() - C * primitiveState->actWrench());
-      wrenchdls.push_back(primitiveState->wrenchld() - C * primitiveState->actWrench());
+      wrenchdus.push_back(primitiveState->wrenchud() - C * wrenchFilterMap[it->first]->getCurrentValue());
+      wrenchdls.push_back(primitiveState->wrenchld() - C * wrenchFilterMap[it->first]->getCurrentValue());
     }
 
     Eigen::SparseMatrix<double, Eigen::ColMajor> Jt;
@@ -223,15 +225,53 @@ namespace whole_body_master_slave_choreonoid {
       tasks.push_back(this->wrenchTargetTask_);
     }
     {
+      if(!this->taumaxDefineTask_){
+        this->taumaxDefineTask_ = std::make_shared<prioritized_qp::Task>();
+        this->taumaxDefineTask_->name() = "Define taumax";
+      }
+      this->taumaxDefineTask_->id_ext().resize(1);
+      this->taumaxDefineTask_->id_ext()[0] = "taumax";
+      this->taumaxDefineTask_->A().resize(0,dim);
+      this->taumaxDefineTask_->A_ext().resize(0,1);
+      this->taumaxDefineTask_->C().resize(tauA.rows()*2,dim);
+      this->taumaxDefineTask_->C().topRows(tauA.rows()) = tauA * - Jt_joints;
+      this->taumaxDefineTask_->C().bottomRows(tauA.rows()) = tauA * - Jt_joints;
+      this->taumaxDefineTask_->C_ext().resize(tauA.rows()*2,1);
+      for(int i=0;i<tauA.rows();i++) this->taumaxDefineTask_->C_ext().coeffRef(i,0) = 1.0;
+      for(int i=tauA.rows();i<tauA.rows()*2;i++) this->taumaxDefineTask_->C_ext().coeffRef(i,0) = -1.0;
+      this->taumaxDefineTask_->dl().resize(taub.rows()*2);
+      this->taumaxDefineTask_->dl().head(taub.rows()) = taub;
+      this->taumaxDefineTask_->dl().tail(taub.rows()) = cnoid::VectorX::Ones(taub.rows()) * - 1e10;
+      this->taumaxDefineTask_->du().resize(taub.rows()*2);
+      this->taumaxDefineTask_->du().head(taub.rows()) = cnoid::VectorX::Ones(taub.rows()) * 1e10;
+      this->taumaxDefineTask_->du().tail(taub.rows()) = taub;
+      this->taumaxDefineTask_->wc() = cnoid::VectorX::Ones(taub.size()*2);
+      this->taumaxDefineTask_->w() = cnoid::VectorX::Ones(dim) * 1e-6;
+      this->taumaxDefineTask_->w_ext() = cnoid::VectorX::Ones(1) * 1e-6;
+      this->taumaxDefineTask_->toSolve() = false;
+      this->taumaxDefineTask_->solver().settings()->setVerbosity(debugLevel);
+      tasks.push_back(this->taumaxDefineTask_);
+    }
+    {
       if(!this->tauTargetTask_){
         this->tauTargetTask_ = std::make_shared<prioritized_qp::Task>();
         this->tauTargetTask_->name() = "tauTargetTask";
       }
-      this->tauTargetTask_->A() = tauA * - Jt_joints;
-      this->tauTargetTask_->b() = taub;
+      this->tauTargetTask_->id_ext().resize(1);
+      this->tauTargetTask_->id_ext()[0] = "taumax";
+      this->tauTargetTask_->A() = Eigen::SparseMatrix<double,Eigen::RowMajor>(tauA.rows()+1,dim);
+      this->tauTargetTask_->A().topRows(tauA.rows()) = tauA * - Jt_joints;
+      this->tauTargetTask_->A_ext() = Eigen::SparseMatrix<double,Eigen::RowMajor>(tauA.rows()+1,1);
+      this->tauTargetTask_->A_ext().insert(tauA.rows(),0) = 1.0;
+      this->tauTargetTask_->b().resize(tauA.rows()+1);
+      this->tauTargetTask_->b().head(tauA.rows()) = taub;
+      this->tauTargetTask_->b()(tauA.rows()) = 0.0;
       this->tauTargetTask_->C().resize(0,dim);
-      this->tauTargetTask_->wa() = cnoid::VectorX::Ones(taub.size());
+      this->tauTargetTask_->C_ext().resize(0,1);
+      this->tauTargetTask_->wa() = cnoid::VectorX::Ones(taub.size()+1);
+      this->tauTargetTask_->wa()[taub.size()] = 10.0;
       this->tauTargetTask_->w() = cnoid::VectorX::Ones(dim) * 1e-6;
+      this->tauTargetTask_->w_ext() = cnoid::VectorX::Ones(1) * 1e-6;
       this->tauTargetTask_->toSolve() = true;
       this->tauTargetTask_->solver().settings()->setVerbosity(debugLevel);
       tasks.push_back(this->tauTargetTask_);
@@ -250,9 +290,11 @@ namespace whole_body_master_slave_choreonoid {
     if( this->transitionTime_ <= 0.0) this->transitionTime_ = 1.0;
     int i=0;
     for(std::unordered_map<std::string, cnoid::Position>::const_iterator it=fixedPoseMap.begin(); it != fixedPoseMap.end(); it++) {
-      transitionVelocityMap_[it->first] = result.segment<6>(6*i) / this->transitionTime_;
+      transitionVelocityMap_[it->first] = dp.segment<6>(6*i) / this->transitionTime_;
       i++;
     }
+
+    return true;
   }
 
 
