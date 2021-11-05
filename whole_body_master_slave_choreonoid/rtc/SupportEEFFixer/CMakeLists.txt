@@ -32,6 +32,7 @@ endforeach(lib)
 rtmbuild_add_library(SupportEEFFixer SHARED
   SupportEEFFixer.cpp
   SupportEEFFixerService_impl.cpp
+  InternalWrenchController.cpp
   )
 target_link_libraries(SupportEEFFixer
   ${catkin_LIBRARIES}

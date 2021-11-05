@@ -2,6 +2,7 @@
 #include <cnoid/EigenUtil>
 #include <cnoid/BodyLoader>
 #include <cnoid/BasicSensors>
+#include <cnoid/ValueTree>
 
 #define DEBUGP (loop%200==0)
 #define DEBUGP_ONCE (loop==0)
@@ -32,6 +33,9 @@ RTC::ReturnCode_t SupportEEFFixer::onInitialize(){
   addInPort("primitiveStateRefIn", this->ports_.m_primitiveStateRefIn_);
   addInPort("qComIn", this->ports_.m_qComIn_);
   addInPort("basePoseComIn", this->ports_.m_basePoseComIn_);
+  addInPort("qActIn", this->ports_.m_qActIn_);
+  addInPort("tauActIn", this->ports_.m_tauActIn_);
+  addInPort("imuActIn", this->ports_.m_imuActIn_);
   addOutPort("primitiveStateComOut", this->ports_.m_primitiveStateComOut_);
   this->ports_.m_SupportEEFFixerServicePort_.registerProvider("service0", "SupportEEFFixerService", this->ports_.m_service0_);
   addPort(this->ports_.m_SupportEEFFixerServicePort_);
@@ -45,6 +49,23 @@ RTC::ReturnCode_t SupportEEFFixer::onInitialize(){
   if(!this->robot_com_){
     std::cerr << "\x1b[31m[" << m_profile.instance_name << "] " << "failed to load model[" << fileName << "]" << "\x1b[39m" << std::endl;
     return RTC::RTC_ERROR;
+  }
+  this->robot_act_ = this->robot_com_->clone();
+
+  for(int i=0;i<this->robot_act_->numJoints();i++){
+    double climit, gearRatio, torqueConst;
+    if(!this->robot_act_->joint(i)->info()->read("climit",climit) ||
+       !this->robot_act_->joint(i)->info()->read("gearRatio",gearRatio) ||
+       !this->robot_act_->joint(i)->info()->read("torqueConst",torqueConst) ||
+       gearRatio == 0.0 ||
+       torqueConst == 0.0){
+      std::cerr << "\x1b[31m[" << m_profile.instance_name << "] climit, gearRatio, torqueConst do not exist for [" <<this->robot_act_->joint(i)->name() << "]" << "\x1b[39m" << std::endl;
+      return RTC::RTC_ERROR;
+    }
+  }
+
+  for(int i=0;i<this->robot_act_->numJoints();i++){
+    tauActFilter_.push_back(std::make_shared<cpp_filters::FirstOrderLowPassFilter<double> >(1.0, 0.0));
   }
 
   this->loop_ = 0;
@@ -90,9 +111,48 @@ void SupportEEFFixer::getPrimitiveState(const std::string& instance_name, Suppor
   primitiveStates.updateTargetForOneStep(dt);
 }
 
-void SupportEEFFixer::processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
+void SupportEEFFixer::calcActualRobot(const std::string& instance_name, SupportEEFFixer::Ports& port, cnoid::BodyPtr& robot, std::vector<std::shared_ptr<cpp_filters::FirstOrderLowPassFilter<double> >>& tauActFilter, double dt) {
+  bool updated = false;
+  if(port.m_qActIn_.isNew()){
+    port.m_qActIn_.read();
+    if(port.m_qAct_.data.length() == robot->numJoints()){
+      for ( int i = 0; i < robot->numJoints(); i++ ){
+        robot->joint(i)->q() = port.m_qAct_.data[i];
+        robot->joint(i)->dq() = 0.0;
+        robot->joint(i)->ddq() = 0.0;
+      }
+      updated = true;
+    }
+  }
+
+  if(port.m_imuActIn_.isNew()){
+    port.m_imuActIn_.read();
+    robot->calcForwardKinematics();
+    cnoid::AccelerationSensorPtr imu = robot->findDevice<cnoid::AccelerationSensor>("gyrometer");
+    cnoid::Matrix3 imuR = imu->link()->R() * imu->R_local();
+    cnoid::Matrix3 actR = cnoid::rotFromRpy(port.m_imuAct_.data.r, port.m_imuAct_.data.p, port.m_imuAct_.data.y);
+    robot->rootLink()->R() = actR * (imuR.transpose() * robot->rootLink()->R());
+    updated = true;
+  }
+
+  if(port.m_tauActIn_.isNew()){
+    port.m_tauActIn_.read();
+    if(port.m_tauAct_.data.length() == robot->numJoints()){
+      for ( int i = 0; i < robot->numJoints(); i++ ){
+        robot->joint(i)->u() = tauActFilter[i]->passFilter(port.m_tauAct_.data[i], dt);
+      }
+    }
+  }
+
+  if(updated) robot->calcForwardKinematics();
+}
+
+void SupportEEFFixer::processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, whole_body_master_slave_choreonoid::InternalWrenchController& internalWrenchController){
   switch(mode.now()){
   case SupportEEFFixer::ControlMode::MODE_SYNC_TO_CONTROL:
+    if(mode.pre() == SupportEEFFixer::ControlMode::MODE_IDLE){
+      internalWrenchController.reset();
+    }
     mode.setNextMode(SupportEEFFixer::ControlMode::MODE_CONTROL);
     break;
   case SupportEEFFixer::ControlMode::MODE_SYNC_TO_IDLE:
@@ -190,9 +250,10 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
   // read ports
   SupportEEFFixer::getPrimitiveState(instance_name, this->ports_, dt, this->primitiveStatesRef_);
   SupportEEFFixer::getCommandRobot(instance_name, this->ports_, this->robot_com_);
+  SupportEEFFixer::calcActualRobot(instance_name, this->ports_, this->robot_act_, this->tauActFilter_, dt);
 
   // mode遷移を実行
-  SupportEEFFixer::processModeTransition(instance_name, this->mode_, this->fixedPoseMap_, this->outputOffsetInterpolator_, this->primitiveStatesRef_);
+  SupportEEFFixer::processModeTransition(instance_name, this->mode_, this->fixedPoseMap_, this->outputOffsetInterpolator_, this->primitiveStatesRef_, this->internalWrenchController_);
 
   std::unordered_set<std::string> newFixedEEF;
   if(this->mode_.isRunning()) {
