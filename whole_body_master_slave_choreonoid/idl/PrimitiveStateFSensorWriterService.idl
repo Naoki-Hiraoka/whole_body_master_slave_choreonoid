@@ -1,0 +1,14 @@
+#include "ExtendedDataTypes.idl" // openrtm
+
+module whole_body_master_slave_choreonoid
+{
+  interface PrimitiveStateFSensorWriterService
+  {
+    struct PrimitiveStateFSensorWriterParam
+    {
+      long debugLevel;
+    };
+    void setParams(in PrimitiveStateFSensorWriterParam i_param);
+    void getParams(out PrimitiveStateFSensorWriterParam i_param);
+  };
+};

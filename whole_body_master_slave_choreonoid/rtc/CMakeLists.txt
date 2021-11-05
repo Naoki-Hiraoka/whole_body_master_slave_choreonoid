@@ -1,3 +1,4 @@
 add_subdirectory(CFRController)
 add_subdirectory(COMController)
 add_subdirectory(SupportEEFFixer)
+add_subdirectory(PrimitiveStateFSensorWriter)
