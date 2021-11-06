@@ -57,6 +57,7 @@ RTC::ReturnCode_t COMController::onInitialize(){
   this->outputCOMOffsetInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);
 
   this->regionMargin_ = 0.02;
+  this->capturePointHeight_ = 1.0;
 
   return RTC::RTC_OK;
 }
@@ -275,7 +276,7 @@ RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
       COMController::preProcessForControl(instance_name);
     }
 
-    this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->prevCOMCom_, M, l, u, vertices, previewVertices, this->debugLevel_);
+    this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->capturePointHeight_, this->prevCOMCom_, M, l, u, vertices, previewVertices, this->debugLevel_);
   }else{
     COMController::passThrough(instance_name, this->robot_com_, this->outputCOMOffsetInterpolator_, this->primitiveStates_, dt, this->prevCOMCom_);
   }
@@ -316,6 +317,7 @@ bool COMController::setParams(const whole_body_master_slave_choreonoid::COMContr
   std::cerr << "[" << m_profile.instance_name << "] "<< "setParams" << std::endl;
   this->debugLevel_ = i_param.debugLevel;
   this->regionMargin_ = i_param.regionMargin;
+  this->capturePointHeight_ = i_param.capturePointHeight;
   return true;
 }
 
@@ -324,6 +326,7 @@ bool COMController::getParams(whole_body_master_slave_choreonoid::COMControllerS
   std::cerr << "[" << m_profile.instance_name << "] "<< "getParams" << std::endl;
   i_param.debugLevel = this->debugLevel_;
   i_param.regionMargin = this->regionMargin_;
+  i_param.capturePointHeight = this->capturePointHeight_;
   return true;
 }
 

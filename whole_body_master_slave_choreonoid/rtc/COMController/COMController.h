@@ -124,6 +124,7 @@ protected:
 
   // params
   double regionMargin_;
+  double capturePointHeight_;
 
   whole_body_master_slave_choreonoid::SCFRController scfrController_;
 

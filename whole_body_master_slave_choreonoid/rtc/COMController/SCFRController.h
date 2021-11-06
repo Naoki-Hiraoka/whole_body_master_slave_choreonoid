@@ -16,6 +16,7 @@ namespace whole_body_master_slave_choreonoid{
                  double m,
                  double dt,
                  double regionMargin_,
+                 double capturePointHeight,
                  cnoid::Vector3& prevCOMCom, // inout & output
                  Eigen::SparseMatrix<double,Eigen::RowMajor>& M, // output
                  cnoid::VectorX& l, // output

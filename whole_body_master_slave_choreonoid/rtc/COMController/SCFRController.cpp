@@ -6,6 +6,7 @@ namespace whole_body_master_slave_choreonoid{
                                double m,
                                double dt,
                                double regionMargin,
+                               double capturePointHeight,
                                cnoid::Vector3& prevCOMCom,
                                Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
                                cnoid::VectorX& l,
@@ -14,7 +15,7 @@ namespace whole_body_master_slave_choreonoid{
                                std::vector<Eigen::Vector2d>& previewVertices,
                                int debugLevel){
 
-    const double h = 1.0;
+    const double h = capturePointHeight;
     const double g = 9.80665;
 
     SCFRController::calcCurrentCFR(primitiveStates,m,this->currentCFRCalculator_,M,l,u,vertices,debugLevel);
