@@ -16,5 +16,6 @@ module whole_body_master_slave_choreonoid
     boolean stopControl();
 
     void applyWrenchDistributionControl(in double transitionTime);
+    void applyTiltControl(in double transitionTime);
   };
 };

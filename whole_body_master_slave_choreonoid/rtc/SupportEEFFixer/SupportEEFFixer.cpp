@@ -185,11 +185,12 @@ void SupportEEFFixer::calcActualRobot(const std::string& instance_name, SupportE
   if(updated) robot->calcForwardKinematics();
 }
 
-void SupportEEFFixer::processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, whole_body_master_slave_choreonoid::InternalWrenchController& internalWrenchController){
+void SupportEEFFixer::processModeTransition(const std::string& instance_name, SupportEEFFixer::ControlMode& mode, std::unordered_map<std::string, cnoid::Position>& fixedPoseMap, std::unordered_map<std::string, std::pair<std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >, std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> > >& outputOffsetInterpolator, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, whole_body_master_slave_choreonoid::InternalWrenchController& internalWrenchController, whole_body_master_slave_choreonoid::TiltController& tiltController){
   switch(mode.now()){
   case SupportEEFFixer::ControlMode::MODE_SYNC_TO_CONTROL:
     if(mode.pre() == SupportEEFFixer::ControlMode::MODE_IDLE){
       internalWrenchController.reset();
+      tiltController.reset();
     }
     mode.setNextMode(SupportEEFFixer::ControlMode::MODE_CONTROL);
     break;
@@ -292,13 +293,14 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
   SupportEEFFixer::calcActualRobot(instance_name, this->ports_, this->robot_act_, this->tauActFilter_, dt);
 
   // mode遷移を実行
-  SupportEEFFixer::processModeTransition(instance_name, this->mode_, this->fixedPoseMap_, this->outputOffsetInterpolator_, this->primitiveStatesRef_, this->internalWrenchController_);
+  SupportEEFFixer::processModeTransition(instance_name, this->mode_, this->fixedPoseMap_, this->outputOffsetInterpolator_, this->primitiveStatesRef_, this->internalWrenchController_, this->tiltController_);
 
   std::unordered_set<std::string> newFixedEEF;
   if(this->mode_.isRunning()) {
     SupportEEFFixer::addOrRemoveFixedEEFMap(instance_name, this->robot_com_, this->primitiveStatesRef_, this->fixedPoseMap_, newFixedEEF);
 
     this->internalWrenchController_.control(this->primitiveStatesRef_, this->wrenchFilterMap_, this->robot_act_, this->pgain_, this->useJoints_, dt, this->debugLevel_, this->fixedPoseMap_);
+    this->tiltController_.control(this->primitiveStatesRef_, this->robot_act_, this->robot_com_, dt, this->debugLevel_, this->fixedPoseMap_);
   }else{
 
   }
@@ -360,6 +362,11 @@ bool SupportEEFFixer::getParams(whole_body_master_slave_choreonoid::SupportEEFFi
 void SupportEEFFixer::applyWrenchDistributionControl(double transitionTime) {
   std::lock_guard<std::mutex> guard(this->mutex_);
   this->internalWrenchController_.start(transitionTime);
+}
+
+void SupportEEFFixer::applyTiltControl(double transitionTime) {
+  std::lock_guard<std::mutex> guard(this->mutex_);
+  this->tiltController_.start(transitionTime);
 }
 
 RTC::ReturnCode_t SupportEEFFixer::onActivated(RTC::UniqueId ec_id){

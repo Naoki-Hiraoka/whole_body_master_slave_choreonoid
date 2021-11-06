@@ -38,3 +38,7 @@ void SupportEEFFixerService_impl::getParams(whole_body_master_slave_choreonoid::
 void SupportEEFFixerService_impl::applyWrenchDistributionControl(CORBA::Double transitionTime) {
   comp_->applyWrenchDistributionControl(transitionTime);
 }
+
+void SupportEEFFixerService_impl::applyTiltControl(CORBA::Double transitionTime) {
+  comp_->applyTiltControl(transitionTime);
+}
