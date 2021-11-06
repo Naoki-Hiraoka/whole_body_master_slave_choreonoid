@@ -2,23 +2,23 @@
 /*!
  * @file WholeBodyMasterSlaveComp.cpp
  * @brief Standalone component
- * @date $Date$
+ * @date Date
  *
- * $Id$
+ * Id
  */
 
 #include <rtm/Manager.h>
 #include <iostream>
 #include <string>
-#include "WholeBodyMasterSlaveChoreonoid.h"
+#include "EEFFrameConverter.h"
 
 void MyModuleInit(RTC::Manager* manager)
 {
-  WholeBodyMasterSlaveChoreonoidInit(manager);
+  EEFFrameConverterInit(manager);
   RTC::RtcBase* comp;
 
   // Create a component
-  comp = manager->createComponent("WholeBodyMasterSlaveChoreonoid");
+  comp = manager->createComponent("EEFFrameConverter");
 
   return;
 }

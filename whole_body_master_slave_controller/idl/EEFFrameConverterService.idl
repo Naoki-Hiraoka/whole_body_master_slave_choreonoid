@@ -1,0 +1,17 @@
+#include "ExtendedDataTypes.idl" // openrtm
+
+module whole_body_master_slave_controller
+{
+  interface EEFFrameConverterService
+  {
+    struct EEFFrameConverterParam
+    {
+      long debugLevel;
+    };
+    void setParams(in EEFFrameConverterParam i_param);
+    void getParams(out EEFFrameConverterParam i_param);
+
+    boolean startControl();
+    boolean stopControl();
+  };
+};
