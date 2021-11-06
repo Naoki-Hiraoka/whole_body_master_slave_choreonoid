@@ -102,10 +102,9 @@ void COMController::getPreviewPrimitiveState(const std::string& instance_name, C
     port.m_previewPrimitiveStateRefIn_.read();
 
     PrimitiveStatesSequence.updateFromIdl(port.m_previewPrimitiveStateRef_);
-  }else{
-    // 時刻をdtはやめる
-    PrimitiveStatesSequence.updateTargetForOneStep(dt);
   }
+  // 時刻をdtはやめる, 補間をdtすすめる
+  PrimitiveStatesSequence.updateTargetForOneStep(dt);
 }
 
 void COMController::processModeTransition(const std::string& instance_name, COMController::ControlMode& mode, std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >& outputCOMOffsetInterpolator, const cnoid::Vector3& prevCOMCom, const primitive_motion_level_tools::PrimitiveStates& primitiveStates){
