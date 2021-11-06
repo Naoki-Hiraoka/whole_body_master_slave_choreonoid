@@ -48,7 +48,9 @@ namespace whole_body_master_slave_choreonoid {
                                             const cnoid::BodyPtr& robot_com,
                                             int debugLevel) {
     /*
-      robot_comのfixedPose系で表現した鉛直軸と、robot_actのfixedPose系で表現した鉛直軸を一致させる
+      robot_comのfixedPose系で表現した鉛直軸と、robot_actのfixedPose系で表現した鉛直軸を一致させる.
+
+      rootLinkやgsensorの座標を用いて一致させようとしても、位置P制御ぶんの関節角度誤差のためfixedPoseの傾きが正しくならない
     */
     cnoid::Vector3 vel = cnoid::Vector3::Zero();
     for(std::unordered_map<std::string, cnoid::Position>::const_iterator it=fixedPoseMap.begin(); it != fixedPoseMap.end(); it++) {
