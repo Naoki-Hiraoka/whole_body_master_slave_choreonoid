@@ -36,6 +36,7 @@ public:
       m_basePoseIn_("basePoseIn", m_basePose_),
 
       m_primitiveStateComOut_("primitiveStateComOut", m_primitiveStateCom_),
+      m_refFramePoseOut_("refFramePoseOut", m_refFramePose_), // robot座標系で表現したref座標系の原点
 
       m_EEFFrameConverterServicePort_("EEFFrameConverterService") {
     }
@@ -50,6 +51,8 @@ public:
 
     primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateCom_;
     RTC::OutPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateComOut_;
+    RTC::TimedPose3D m_refFramePose_;
+    RTC::OutPort<RTC::TimedPose3D> m_refFramePoseOut_;
 
     EEFFrameConverterService_impl m_service0_;
     RTC::CorbaPort m_EEFFrameConverterServicePort_;
@@ -136,27 +139,29 @@ protected:
   // portから受け取ったprimitive motion level 指令
   primitive_motion_level_tools::PrimitiveStates primitiveStatesRef_;
 
-  // robotの座標系の原点->Refの座標系の原点のtransform
+  // Refの座標系の原点->robotの座標系の原点のtransform
   cnoid::Position transForm_;
-  // 新しく増えたEEFに適用するオフセット
-  std::unordered_map<std::string, std::shared_ptr<PositionFilter> > positionOffsetInterpolatorMap_;
-  std::unordered_set<std::string> prevEEFs_;
+
+  // 出力する各EEFの座標
+  std::unordered_map<std::string, std::shared_ptr<PositionFilter> > positionInterpolatorMap_;
+  // 各EEFの重み
+  std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > > frameConversionWeightInterpolatorMap_;
 
   // params
 
   // static functions
   static void getRobot(const std::string& instance_name, EEFFrameConverter::Ports& port, cnoid::BodyPtr& robot);
   static void getPrimitiveState(const std::string& instance_name, EEFFrameConverter::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates);
-  static void processModeTransition(const std::string& instance_name, EEFFrameConverter::ControlMode& mode, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap, std::unordered_set<std::string>& prevEEFs);
-  static void calcFrameConversion(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm);
-  static void applyOffset(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, double dt, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap, std::unordered_set<std::string>& prevEEFs);
+  static void processModeTransition(const std::string& instance_name, EEFFrameConverter::ControlMode& mode, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionInterpolatorMap, std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >& frameConversionWeightInterpolatorMap);
+  static void calcFrameConversion(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >& frameConversionWeightInterpolatorMap, double dt);
+  static void applyPositionFilter(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, double dt, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionInterpolatorMap);
   static void calcOutputPorts(const std::string& instance_name,
                               EEFFrameConverter::Ports& port,
                               bool isRunning,
                               double dt,
                               const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
                               const cnoid::Position& transForm,
-                              const std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap);
+                              const std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionInterpolatorMap);
 };
 
 

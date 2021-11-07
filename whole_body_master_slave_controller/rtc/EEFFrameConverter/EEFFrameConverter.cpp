@@ -29,6 +29,7 @@ RTC::ReturnCode_t EEFFrameConverter::onInitialize(){
   addInPort("qIn", this->ports_.m_qIn_);
   addInPort("basePoseIn", this->ports_.m_basePoseIn_);
   addOutPort("primitiveStateComOut", this->ports_.m_primitiveStateComOut_);
+  addOutPort("refFramePoseOut", this->ports_.m_refFramePoseOut_);
   this->ports_.m_EEFFrameConverterServicePort_.registerProvider("service0", "EEFFrameConverterService", this->ports_.m_service0_);
   addPort(this->ports_.m_EEFFrameConverterServicePort_);
 
@@ -46,6 +47,8 @@ RTC::ReturnCode_t EEFFrameConverter::onInitialize(){
   this->loop_ = 0;
 
   this->mode_.setNextMode(ControlMode::MODE_IDLE);
+
+  this->transForm_ = cnoid::Position::Identity();
 
   return RTC::RTC_OK;
 }
@@ -86,7 +89,7 @@ void EEFFrameConverter::getPrimitiveState(const std::string& instance_name, EEFF
   primitiveStates.updateTargetForOneStep(dt);
 }
 
-void EEFFrameConverter::processModeTransition(const std::string& instance_name, EEFFrameConverter::ControlMode& mode, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap, std::unordered_set<std::string>& prevEEFs){
+void EEFFrameConverter::processModeTransition(const std::string& instance_name, EEFFrameConverter::ControlMode& mode, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionInterpolatorMap, std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >& frameConversionWeightInterpolatorMap){
   switch(mode.now()){
   case EEFFrameConverter::ControlMode::MODE_SYNC_TO_CONTROL:
     if(mode.pre() == EEFFrameConverter::ControlMode::MODE_IDLE){
@@ -95,8 +98,8 @@ void EEFFrameConverter::processModeTransition(const std::string& instance_name, 
     break;
   case EEFFrameConverter::ControlMode::MODE_SYNC_TO_IDLE:
     if(mode.pre() == EEFFrameConverter::ControlMode::MODE_CONTROL){
-      prevEEFs.clear();
-      positionOffsetInterpolatorMap.clear();
+      positionInterpolatorMap.clear();
+      frameConversionWeightInterpolatorMap.clear();
     }
     mode.setNextMode(EEFFrameConverter::ControlMode::MODE_IDLE);
     break;
@@ -104,35 +107,117 @@ void EEFFrameConverter::processModeTransition(const std::string& instance_name, 
   mode.update();
 }
 
-void EEFFrameConverter::applyOffset(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, double dt, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap, std::unordered_set<std::string>& prevEEFs) {
-  // 消滅したEEFを削除
-  for(std::unordered_map<std::string, std::shared_ptr<PositionFilter> >::iterator it = positionOffsetInterpolatorMap.begin(); it != positionOffsetInterpolatorMap.end(); ) {
+void EEFFrameConverter::calcFrameConversion(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >& frameConversionWeightInterpolatorMap, double dt) {
+
+  // 1. weightを計算
+  //  消滅したEEFを削除
+  for(std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >::iterator it=frameConversionWeightInterpolatorMap.begin();it!=frameConversionWeightInterpolatorMap.end();){
     if (primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end())
-      it = positionOffsetInterpolatorMap.erase(it);
+      it = frameConversionWeightInterpolatorMap.erase(it);
     else ++it;
   }
+  //  新しく増えたEEFを追加 0 -> 1
+  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it=primitiveStates.primitiveState().begin();it!=primitiveStates.primitiveState().end();it++){
+    if(frameConversionWeightInterpolatorMap.find(it->first)==frameConversionWeightInterpolatorMap.end()){
+      std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > frameConversionWeightInterpolator = std::make_shared<cpp_filters::TwoPointInterpolator<double> >(0.0, 0.0, 0.0, cpp_filters::LINEAR); // 0はよくないが、後ろの処理でdt進むので0ではなくなる
+      frameConversionWeightInterpolator->setGoal(1.0, 1.0);
+      frameConversionWeightInterpolatorMap[it->first] = frameConversionWeightInterpolator;
+    }
+  }
 
+  // 2. 座標を取得
+  std::vector<cnoid::Position> refTs;
+  std::vector<cnoid::Position> actTs;
+  std::vector<double> weights;
+  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it=primitiveStates.primitiveState().begin();it!=primitiveStates.primitiveState().end();it++){
+    const cnoid::LinkPtr& link = robot->link(it->second->parentLinkName());
+    if(!link) continue;
+    refTs.push_back(it->second->targetPose());
+    actTs.push_back(link->T() * it->second->localPose());
+    double w, v, a;
+    frameConversionWeightInterpolatorMap[it->first]->get(w, v, a, dt);
+    weights.push_back(w);
+  }
+  if(refTs.size() == 0) return;
+
+  // 3. 変換(transForm)を計算 // ref座標系で表現したrobot座標系の原点
+  for(size_t loop=0;loop<3;loop++){
+    // calc error, jacobian
+    cnoid::VectorX error = cnoid::VectorX::Zero(refTs.size()*4);
+    Eigen::SparseMatrix<double,Eigen::RowMajor> J(refTs.size()*4,4);
+    Eigen::SparseMatrix<double,Eigen::RowMajor> W(refTs.size()*4,refTs.size()*4);
+    for(size_t i=0;i<refTs.size();i++){
+      const cnoid::Position& refT = refTs[i];
+      const cnoid::Position& actT = transForm * actTs[i]; // ref座標系に揃える
+
+      error.segment<3>(4*i) = refT.translation() - actT.translation();
+      cnoid::Matrix3 diffR = refT.linear() * actT.linear().transpose();
+      cnoid::Matrix3 horizontal_diffR;
+      {
+        cnoid::Vector3 localZ = diffR * cnoid::Vector3::UnitZ();
+        cnoid::Vector3 cross = localZ.cross(cnoid::Vector3::UnitZ());
+        double sin = cross.norm();
+        double cos = localZ.dot(cnoid::Vector3::UnitZ());
+        double angle = std::atan2(sin,cos);
+        horizontal_diffR = Eigen::AngleAxisd(angle,(cross.norm()!=0.0) ? cross.normalized() : cnoid::Vector3::UnitX()).toRotationMatrix() * diffR;
+      }
+      error[4*i+3] = cnoid::rpyFromRot(horizontal_diffR)[2];
+
+      cnoid::Vector3 dp = cnoid::Vector3::UnitZ().cross(actT.translation() - transForm.translation());
+      J.coeffRef(4*i+0,0) = 1.0; J.coeffRef(4*i+0,3) = dp[0];
+      J.coeffRef(4*i+1,1) = 1.0; J.coeffRef(4*i+1,3) = dp[1];
+      J.coeffRef(4*i+2,2) = 1.0; J.coeffRef(4*i+2,3) = dp[2];
+      J.coeffRef(4*i+3,3) = 1.0;
+    }
+
+    // solve
+    for(size_t i=0;i<refTs.size();i++){
+      for(int j=0;j<3;j++) W.coeffRef(i*4+j,i*4+j) = weights[i];
+      W.coeffRef(i*4+3,i*4+3) = weights[i] * 0.01;//yawの寄与を小さく
+    }
+    // d_origin = (Jt W J)^-1 Jt W error
+    // <=>
+    // (Jt W J) d_origin = Jt W error
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double> > solver;
+    solver.compute(J.transpose() * W * J);
+    if(solver.info()!=Eigen::Success) {
+      // decomposition failed. ありえないか
+      return;
+    }
+    cnoid::Vector4 d_origin = solver.solve(J.transpose() * W * error);
+    if(solver.info()!=Eigen::Success) {
+      // solving failed ありえないか
+      return;
+    }
+
+    // apply result
+    transForm.translation() += d_origin.head<3>();
+    transForm.linear() = cnoid::rotFromRpy(0,0,cnoid::rpyFromRot(transForm.linear())[2] + d_origin[3]);
+  }
+
+}
+
+void EEFFrameConverter::applyPositionFilter(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, double dt, std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionInterpolatorMap) {
+  // 消滅したEEFを削除
+  for(std::unordered_map<std::string, std::shared_ptr<PositionFilter> >::iterator it = positionInterpolatorMap.begin(); it != positionInterpolatorMap.end(); ) {
+    if (primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end())
+      it = positionInterpolatorMap.erase(it);
+    else ++it;
+  }
   // 増加したEEFの反映
   for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveStates.primitiveState().begin(); it != primitiveStates.primitiveState().end(); it++) {
-    if(prevEEFs.find(it->first)==prevEEFs.end()){
+    if(positionInterpolatorMap.find(it->first)==positionInterpolatorMap.end()){
+      std::shared_ptr<PositionFilter> filter = std::make_shared<PositionFilter>(cnoid::Position::Identity(), cnoid::Vector6::Zero(), cnoid::Vector6::Zero());
       cnoid::LinkPtr link = robot->link(it->second->parentLinkName());
-      if(link) {
-        cnoid::Position currentT = link->T() * it->second->localPose();
-        cnoid::Position targetT = transForm * it->second->targetPose();
-        std::shared_ptr<PositionFilter> offsetFilter = std::make_shared<PositionFilter>(currentT * targetT.inverse(), cnoid::Vector6::Zero(), cnoid::Vector6::Zero());
-        offsetFilter->setGoal(cnoid::Position::Identity(), 3.0);
-        positionOffsetInterpolatorMap[it->first] = offsetFilter;
-        prevEEFs.insert(it->first);
-      }
+      if(link) filter->Reset(link->T() * it->second->localPose());
+      else filter->Reset(transForm.inverse() * it->second->targetPose());
+      positionInterpolatorMap[it->first] = filter;
     }
   }
 
   // 補間を1ステップすすめる
-  for(std::unordered_map<std::string, std::shared_ptr<PositionFilter> >::iterator it = positionOffsetInterpolatorMap.begin(); it!=positionOffsetInterpolatorMap.end();){
-    cnoid::Position tmp;
-    it->second->get(tmp, dt);
-    if(it->second->isEmpty()) it = positionOffsetInterpolatorMap.erase(it);
-    else it++;
+  for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it = primitiveStates.primitiveState().begin(); it != primitiveStates.primitiveState().end(); it++) {
+    positionInterpolatorMap[it->first]->setGoal(transForm.inverse() * it->second->targetPose(), 1.0);
   }
 }
 
@@ -144,6 +229,7 @@ void EEFFrameConverter::calcOutputPorts(const std::string& instance_name,
                                         const cnoid::Position& transForm,
                                         const std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap){
   if(isRunning){
+    cnoid::Position transFormInv = transForm.inverse();
     // primitiveState
     port.m_primitiveStateCom_ = port.m_primitiveStateRef_;
     for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
@@ -152,17 +238,12 @@ void EEFFrameConverter::calcOutputPorts(const std::string& instance_name,
       if(port.m_primitiveStateCom_.data[i].time != 0.0) port.m_primitiveStateCom_.data[i].time = dt;
       const cnoid::Vector6& targetWrench = primitiveState->targetWrench();
       cnoid::Vector6 targetWrenchTransformed;
-      targetWrenchTransformed.head<3>() = transForm.linear() * targetWrench.head<3>();
-      targetWrenchTransformed.tail<3>() = transForm.linear() * targetWrench.tail<3>();
+      targetWrenchTransformed.head<3>() = transFormInv.linear() * targetWrench.head<3>();
+      targetWrenchTransformed.tail<3>() = transFormInv.linear() * targetWrench.tail<3>();
       for(size_t j=0;j<6;j++) port.m_primitiveStateCom_.data[i].wrench[j] = targetWrenchTransformed[j];
 
-      const cnoid::Position& targetPose = primitiveState->targetPose();
-      cnoid::Position targetPoseTransformed = transForm * targetPose;
-      if(positionOffsetInterpolatorMap.find(name) != positionOffsetInterpolatorMap.end()){
-        cnoid::Position offset;
-        positionOffsetInterpolatorMap.find(name)->second->get(offset);
-        targetPoseTransformed = offset * targetPoseTransformed;
-      }
+      cnoid::Position targetPoseTransformed;
+      positionOffsetInterpolatorMap.find(name)->second->get(targetPoseTransformed, dt);
       port.m_primitiveStateCom_.data[i].pose.position.x = targetPoseTransformed.translation()[0];
       port.m_primitiveStateCom_.data[i].pose.position.y = targetPoseTransformed.translation()[1];
       port.m_primitiveStateCom_.data[i].pose.position.z = targetPoseTransformed.translation()[2];
@@ -187,6 +268,17 @@ void EEFFrameConverter::calcOutputPorts(const std::string& instance_name,
       }
     }
     port.m_primitiveStateComOut_.write();
+
+    // refFramePose robot座標系で表現したref座標系の原点
+    port.m_refFramePose_.data.position.x = transFormInv.translation()[0];
+    port.m_refFramePose_.data.position.y = transFormInv.translation()[1];
+    port.m_refFramePose_.data.position.z = transFormInv.translation()[2];
+    cnoid::Vector3 rpy = cnoid::rpyFromRot(transFormInv.linear());
+    port.m_refFramePose_.data.orientation.r = rpy[0];
+    port.m_refFramePose_.data.orientation.p = rpy[1];
+    port.m_refFramePose_.data.orientation.y = rpy[2];
+    port.m_refFramePose_.tm = port.m_q_.tm;
+    port.m_refFramePoseOut_.write();
   }
 }
 
@@ -201,17 +293,19 @@ RTC::ReturnCode_t EEFFrameConverter::onExecute(RTC::UniqueId ec_id){
   EEFFrameConverter::getRobot(instance_name, this->ports_, this->robot_);
 
   // mode遷移を実行
-  EEFFrameConverter::processModeTransition(instance_name, this->mode_, this->positionOffsetInterpolatorMap_, this->prevEEFs_);
+  EEFFrameConverter::processModeTransition(instance_name, this->mode_, this->positionInterpolatorMap_, this->frameConversionWeightInterpolatorMap_);
 
   if(this->mode_.isRunning()) {
-    //calcFrameConversion
-    EEFFrameConverter::applyOffset(instance_name, this->robot_, this->primitiveStatesRef_, this->transForm_, dt, this->positionOffsetInterpolatorMap_, this->prevEEFs_);
+    EEFFrameConverter::calcFrameConversion(instance_name, this->robot_, this->primitiveStatesRef_, this->transForm_, this->frameConversionWeightInterpolatorMap_, dt);
+
+    EEFFrameConverter::applyPositionFilter(instance_name, this->robot_, this->primitiveStatesRef_, this->transForm_, dt, this->positionInterpolatorMap_);
+
   }else{
 
   }
 
   // write outport
-  EEFFrameConverter::calcOutputPorts(instance_name, this->ports_, this->mode_.isRunning(), dt, this->primitiveStatesRef_, this->transForm_, this->positionOffsetInterpolatorMap_);
+  EEFFrameConverter::calcOutputPorts(instance_name, this->ports_, this->mode_.isRunning(), dt, this->primitiveStatesRef_, this->transForm_, this->positionInterpolatorMap_);
 
   this->loop_++;
   return RTC::RTC_OK;
