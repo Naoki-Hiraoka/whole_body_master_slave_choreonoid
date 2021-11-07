@@ -156,6 +156,8 @@ void SupportEEFFixer::calcActualRobot(const std::string& instance_name, SupportE
         robot->joint(i)->ddq() = 0.0;
       }
       updated = true;
+    }else{
+      std::cerr << "\x1b[31m[" << instance_name << "] " << "dimension of m_qActIn != robot->numJoints()" << "\x1b[39m" << std::endl;
     }
   }
 

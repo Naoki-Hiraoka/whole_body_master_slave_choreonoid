@@ -54,17 +54,16 @@ namespace whole_body_master_slave_choreonoid {
     */
     cnoid::Vector3 vel = cnoid::Vector3::Zero();
     for(std::unordered_map<std::string, cnoid::Position>::const_iterator it=fixedPoseMap.begin(); it != fixedPoseMap.end(); it++) {
-      cnoid::Vector3 Zaxis_in_com_frame = it->second.linear() * cnoid::Vector3::UnitZ();
-      cnoid::Vector3 Zaxis_in_act_frame = robot_act->link(primitiveStates.primitiveState().find(it->first)->second->parentLinkName())->R() * primitiveStates.primitiveState().find(it->first)->second->localPose().linear() * cnoid::Vector3::UnitZ();
+      cnoid::Vector3 Zaxis_in_com_frame = it->second.linear().transpose() * cnoid::Vector3::UnitZ();
+      cnoid::Vector3 Zaxis_in_act_frame = (robot_act->link(primitiveStates.primitiveState().find(it->first)->second->parentLinkName())->R() * primitiveStates.primitiveState().find(it->first)->second->localPose().linear()).transpose() * cnoid::Vector3::UnitZ();
 
       cnoid::Vector3 cross = Zaxis_in_com_frame.cross(Zaxis_in_act_frame);
       if(cross.norm()==0){
         this->transitionVelocity_ = cnoid::Vector3::Zero();
       }else{
-        double sin = cross.norm();
-        double cos = Zaxis_in_com_frame.dot(Zaxis_in_act_frame);
-        double angle = std::atan2(sin,cos);
-        vel += - cross.normalized() * angle / this->transitionTime_;
+        double angle = std::acos(Zaxis_in_com_frame.dot(Zaxis_in_act_frame)); // 0~pi
+        cnoid::Vector3 axis = cross.normalized(); // include sign
+        vel -= axis * angle / this->transitionTime_;
       }
 
       if(debugLevel > 0){

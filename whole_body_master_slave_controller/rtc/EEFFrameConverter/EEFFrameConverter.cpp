@@ -156,10 +156,9 @@ void EEFFrameConverter::calcFrameConversion(const std::string& instance_name, co
       {
         cnoid::Vector3 localZ = diffR * cnoid::Vector3::UnitZ();
         cnoid::Vector3 cross = localZ.cross(cnoid::Vector3::UnitZ());
-        double sin = cross.norm();
-        double cos = localZ.dot(cnoid::Vector3::UnitZ());
-        double angle = std::atan2(sin,cos);
-        horizontal_diffR = Eigen::AngleAxisd(angle,(cross.norm()!=0.0) ? cross.normalized() : cnoid::Vector3::UnitX()).toRotationMatrix() * diffR;
+        double angle = std::acos(localZ.dot(cnoid::Vector3::UnitZ())); // 0~pi
+        cnoid::Vector3 axis = (cross.norm()!=0.0) ? cross.normalized() : cnoid::Vector3::UnitX();// include sign
+        horizontal_diffR = Eigen::AngleAxisd(angle,axis).toRotationMatrix() * diffR;
       }
       error[4*i+3] = cnoid::rpyFromRot(horizontal_diffR)[2];
 
