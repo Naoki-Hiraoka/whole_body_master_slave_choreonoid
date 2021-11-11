@@ -31,7 +31,8 @@ PrimitiveStateFSensorWriter::PrimitiveStateFSensorWriter(RTC::Manager* manager) 
 RTC::ReturnCode_t PrimitiveStateFSensorWriter::onInitialize(){
 
   addInPort("primitiveStateRefIn", this->ports_.m_primitiveStateRefIn_);
-  addInPort("qActIn", this->ports_.m_qActIn_);
+  addInPort("qIn", this->ports_.m_qIn_);
+  addInPort("basePoseIn", this->ports_.m_basePoseIn_);
   addOutPort("primitiveStateComOut", this->ports_.m_primitiveStateComOut_);
   this->ports_.m_PrimitiveStateFSensorWriterServicePort_.registerProvider("service0", "PrimitiveStateFSensorWriterService", this->ports_.m_service0_);
   addPort(this->ports_.m_PrimitiveStateFSensorWriterServicePort_);
@@ -77,6 +78,15 @@ RTC::ReturnCode_t PrimitiveStateFSensorWriter::onInitialize(){
     }
   }
 
+  {
+    std::string writeToTargetWrenchStr = "false";
+    if(this->getProperties().hasKey("write_to_target_wrench")) writeToTargetWrenchStr = std::string(this->getProperties()["write_to_target_wrench"]);
+    else if(this->m_pManager->getConfig().hasKey("write_to_target_wrench")) writeToTargetWrenchStr = std::string(this->m_pManager->getConfig()["write_to_target_wrench"]); // 引数 -o で与えたプロパティを捕捉
+    std::cerr << "[" << this->m_profile.instance_name << "] write_to_target_wrench: " << writeToTargetWrenchStr <<std::endl;
+    std::istringstream is(writeToTargetWrenchStr);
+    is >> std::boolalpha >> this->writeToTargetWrench_;
+  }
+
   this->loop_ = 0;
 
   return RTC::RTC_OK;
@@ -108,23 +118,36 @@ void PrimitiveStateFSensorWriter::getPrimitiveState(const std::string& instance_
 }
 
 void PrimitiveStateFSensorWriter::getActualRobot(const std::string& instance_name, PrimitiveStateFSensorWriter::Ports& port, cnoid::BodyPtr& robot) {
-  if(port.m_qActIn_.isNew()){
-    port.m_qActIn_.read();
-    if(port.m_qAct_.data.length() == robot->numJoints()){
+  bool updated = false;
+  if(port.m_qIn_.isNew()){
+    port.m_qIn_.read();
+    if(port.m_q_.data.length() == robot->numJoints()){
       for ( int i = 0; i < robot->numJoints(); i++ ){
-        robot->joint(i)->q() = port.m_qAct_.data[i];
+        robot->joint(i)->q() = port.m_q_.data[i];
         robot->joint(i)->dq() = 0.0;
         robot->joint(i)->ddq() = 0.0;
       }
-      robot->calcForwardKinematics();
+      updated=true;
     }
   }
+
+  if(port.m_basePoseIn_.isNew()){
+    port.m_basePoseIn_.read();
+    robot->rootLink()->p()[0] = port.m_basePose_.data.position.x;
+    robot->rootLink()->p()[1] = port.m_basePose_.data.position.y;
+    robot->rootLink()->p()[2] = port.m_basePose_.data.position.z;
+    robot->rootLink()->R() = cnoid::rotFromRpy(port.m_basePose_.data.orientation.r, port.m_basePose_.data.orientation.p, port.m_basePose_.data.orientation.y);
+    updated = true;
+  }
+
+  if(updated) robot->calcForwardKinematics();
 }
 
 void PrimitiveStateFSensorWriter::calcOutputPorts(const std::string& instance_name,
                                                   const std::unordered_map<std::string, cnoid::ForceSensorPtr>& sensorMap,
                                                   const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
                                                   const cnoid::BodyPtr& robot,
+                                                  bool writeToTargetWrench,
                                                   double dt,
                                                   PrimitiveStateFSensorWriter::Ports& port){
   // primitiveState
@@ -153,7 +176,14 @@ void PrimitiveStateFSensorWriter::calcOutputPorts(const std::string& instance_na
       wrench.head<3>() = eef2SensorT.linear() * sensor->F().head<3>();
       wrench.tail<3>() = eef2SensorT.linear() * sensor->F().tail<3>();
       wrench.tail<3>() += eef2SensorT.translation().cross(wrench.head<3>());
-      for(int j=0;j<6;j++) port.m_primitiveStateCom_.data[i].actWrench[j] = wrench[j];
+      if(writeToTargetWrench){
+        cnoid::Vector6 wrenchGlobal;
+        wrenchGlobal.head<3>() = eefT.linear() * wrench.head<3>();
+        wrenchGlobal.tail<3>() = eefT.linear() * wrench.tail<3>();
+        for(int j=0;j<6;j++) port.m_primitiveStateCom_.data[i].wrench[j] = wrenchGlobal[j];
+      }else{
+        for(int j=0;j<6;j++) port.m_primitiveStateCom_.data[i].actWrench[j] = wrench[j];
+      }
     }
   }
   port.m_primitiveStateComOut_.write();
@@ -169,7 +199,7 @@ RTC::ReturnCode_t PrimitiveStateFSensorWriter::onExecute(RTC::UniqueId ec_id){
   PrimitiveStateFSensorWriter::getActualRobot(instance_name, this->ports_, this->robot_act_);
   PrimitiveStateFSensorWriter::getForceSensorData(instance_name, this->ports_, this->robot_act_);
   // write outport
-  PrimitiveStateFSensorWriter::calcOutputPorts(instance_name, this->sensorMap_, this->primitiveStates_, this->robot_act_, dt, this->ports_);
+  PrimitiveStateFSensorWriter::calcOutputPorts(instance_name, this->sensorMap_, this->primitiveStates_, this->robot_act_, this->writeToTargetWrench_, dt, this->ports_);
 
   this->loop_++;
   return RTC::RTC_OK;

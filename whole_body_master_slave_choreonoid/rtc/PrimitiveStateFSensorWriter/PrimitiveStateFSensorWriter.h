@@ -29,7 +29,8 @@ public:
   public:
     Ports() :
       m_primitiveStateRefIn_("primitiveStateRefIn", m_primitiveStateRef_),
-      m_qActIn_("qActIn", m_qAct_),
+      m_qIn_("qIn", m_q_),
+      m_basePoseIn_("basePoseIn", m_basePose_),
       m_primitiveStateComOut_("primitiveStateComOut", m_primitiveStateCom_),
 
       m_PrimitiveStateFSensorWriterServicePort_("PrimitiveStateFSensorWriterService") {
@@ -37,8 +38,10 @@ public:
 
     primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateRef_;
     RTC::InPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateRefIn_;
-    RTC::TimedDoubleSeq m_qAct_;
-    RTC::InPort<RTC::TimedDoubleSeq> m_qActIn_;
+    RTC::TimedDoubleSeq m_q_;
+    RTC::InPort<RTC::TimedDoubleSeq> m_qIn_;
+    RTC::TimedPose3D m_basePose_;
+    RTC::InPort<RTC::TimedPose3D> m_basePoseIn_;
     primitive_motion_level_msgs::TimedPrimitiveStateSeq m_primitiveStateCom_;
     RTC::OutPort <primitive_motion_level_msgs::TimedPrimitiveStateSeq> m_primitiveStateComOut_;
     std::vector<RTC::TimedDoubleSeq> m_wrenches_;
@@ -75,6 +78,7 @@ protected:
   std::unordered_map<std::string, cnoid::ForceSensorPtr> sensorMap_;
 
   // params
+  bool writeToTargetWrench_;
 
   // static functions
   static void getPrimitiveState(const std::string& instance_name, PrimitiveStateFSensorWriter::Ports& port, double dt, primitive_motion_level_tools::PrimitiveStates& primitiveStates);
@@ -84,6 +88,7 @@ protected:
                               const std::unordered_map<std::string, cnoid::ForceSensorPtr>& sensorMap,
                               const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
                               const cnoid::BodyPtr& robot,
+                              bool writeToTargetWrench,
                               double dt,
                               PrimitiveStateFSensorWriter::Ports& port);
 };
