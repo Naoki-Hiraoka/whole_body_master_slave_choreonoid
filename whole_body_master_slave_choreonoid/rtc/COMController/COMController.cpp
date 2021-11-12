@@ -152,7 +152,7 @@ void COMController::preProcessForControl(const std::string& instance_name) {
 
 void COMController::calcOutputPorts(const std::string& instance_name,
                               COMController::Ports& port,
-                              const cnoid::Vector3 prevCOMCom,
+                              const cnoid::Vector3& prevCOMCom,
                               const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
                               const Eigen::VectorXd& l,
                               const Eigen::VectorXd& u,
@@ -182,7 +182,7 @@ void COMController::calcOutputPorts(const std::string& instance_name,
   for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
     if(std::string(port.m_primitiveStateCom_.data[i].name) == "com") comIdx = i;
   }
-  if(comIdx == -1 && isRunning){
+  if(comIdx == -1 && isRunning && port.m_primitiveStateCom_.data.length() != 0){
     // generate com task
     comIdx = port.m_primitiveStateCom_.data.length();
     port.m_primitiveStateCom_.data.length(port.m_primitiveStateCom_.data.length()+1);
@@ -196,14 +196,21 @@ void COMController::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveStateCom_.data[comIdx].localPose.orientation.y=0.0;
     port.m_primitiveStateCom_.data[comIdx].supportCOM = false;
     port.m_primitiveStateCom_.data[comIdx].isWrenchCGlobal = false;
+    port.m_primitiveStateCom_.data[comIdx].wrench.length(6);
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrench[i] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].M.length(6);
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].M[i] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].D.length(6);
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].D[i] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].K.length(6);
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].K[i] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].poseFollowGain.length(6);
     port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] = 1.0;
     port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] = 1.0;
     for(int i=2;i<6;i++) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[i] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].wrenchFollowGain.length(6);
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].wrenchFollowGain[i] = 0.0;
+    port.m_primitiveStateCom_.data[comIdx].actWrench.length(6);
     for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].actWrench[i] = 0.0;
   }
   if(comIdx!=-1){
@@ -215,6 +222,10 @@ void COMController::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.r=0.0;
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.p=0.0;
     port.m_primitiveStateCom_.data[comIdx].pose.orientation.y=0.0;
+    if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain.length() != 6) {
+      port.m_primitiveStateCom_.data[comIdx].poseFollowGain.length(6);
+      for(int i=0;i<6;i++) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[i] = 0.0;
+    }
     if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] == 0.0) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[0] = 1.0;
     if(port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] == 0.0) port.m_primitiveStateCom_.data[comIdx].poseFollowGain[1] = 1.0;
 
@@ -224,6 +235,7 @@ void COMController::calcOutputPorts(const std::string& instance_name,
     port.m_primitiveStateCom_.data[comIdx].poseud.length(u.rows());
     cnoid::MatrixXd Mdense = M;
     for(int i=0;i<M.rows();i++){
+      port.m_primitiveStateCom_.data[comIdx].poseC[i].length(6);
       for(int j=0;j<2;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = Mdense(i,j);
       for(int j=2;j<6;j++) port.m_primitiveStateCom_.data[comIdx].poseC[i][j] = 0.0;
       port.m_primitiveStateCom_.data[comIdx].poseld[i] = std::max(l[i],-1e10); // 大きすぎると後のコンポーネントの処理でオーバーフローする
@@ -276,7 +288,8 @@ RTC::ReturnCode_t COMController::onExecute(RTC::UniqueId ec_id){
       COMController::preProcessForControl(instance_name);
     }
 
-    this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->capturePointHeight_, this->prevCOMCom_, M, l, u, vertices, previewVertices, this->debugLevel_);
+    if(this->primitiveStates_.primitiveState().size() == 0) this->prevCOMCom_ = this->robot_com_->centerOfMass();
+    else this->scfrController_.control(this->primitiveStates_, this->previewPrimitiveStates_, this->robot_com_->mass(), dt, this->regionMargin_, this->capturePointHeight_, this->prevCOMCom_, M, l, u, vertices, previewVertices, this->debugLevel_);
   }else{
     COMController::passThrough(instance_name, this->robot_com_, this->outputCOMOffsetInterpolator_, this->primitiveStates_, dt, this->prevCOMCom_);
   }

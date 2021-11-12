@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
   urdf
   primitive_motion_level_tools
   primitive_motion_level_msgs
+  cpp_filters
   )
 find_package(choreonoid REQUIRED)
 
@@ -57,13 +58,18 @@ include_directories(
  )
 
 add_executable(master_controller src/master_controller.cpp)
-
 target_link_libraries(master_controller
   ${catkin_LIBRARIES}
   ${CHOREONOID_BODY_LIBRARIES_ABS}
  )
 
-install(TARGETS master_controller
+add_executable(slave_controller src/slave_controller.cpp)
+target_link_libraries(slave_controller
+  ${catkin_LIBRARIES}
+  ${CHOREONOID_BODY_LIBRARIES_ABS}
+ )
+
+install(TARGETS master_controller slave_controller
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

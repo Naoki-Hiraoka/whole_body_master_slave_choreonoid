@@ -228,8 +228,8 @@ void EEFFrameConverter::calcOutputPorts(const std::string& instance_name,
                                         const primitive_motion_level_tools::PrimitiveStates& primitiveStates,
                                         const cnoid::Position& transForm,
                                         const std::unordered_map<std::string, std::shared_ptr<PositionFilter> >& positionOffsetInterpolatorMap){
+  cnoid::Position transFormInv = transForm.inverse();
   if(isRunning){
-    cnoid::Position transFormInv = transForm.inverse();
     // primitiveState
     port.m_primitiveStateCom_ = port.m_primitiveStateRef_;
     for(int i=0;i<port.m_primitiveStateCom_.data.length();i++){
@@ -268,18 +268,19 @@ void EEFFrameConverter::calcOutputPorts(const std::string& instance_name,
       }
     }
     port.m_primitiveStateComOut_.write();
-
-    // refFramePose robot座標系で表現したref座標系の原点
-    port.m_refFramePose_.data.position.x = transFormInv.translation()[0];
-    port.m_refFramePose_.data.position.y = transFormInv.translation()[1];
-    port.m_refFramePose_.data.position.z = transFormInv.translation()[2];
-    cnoid::Vector3 rpy = cnoid::rpyFromRot(transFormInv.linear());
-    port.m_refFramePose_.data.orientation.r = rpy[0];
-    port.m_refFramePose_.data.orientation.p = rpy[1];
-    port.m_refFramePose_.data.orientation.y = rpy[2];
-    port.m_refFramePose_.tm = port.m_q_.tm;
-    port.m_refFramePoseOut_.write();
   }
+
+  // refFramePose robot座標系で表現したref座標系の原点
+  port.m_refFramePose_.data.position.x = transFormInv.translation()[0];
+  port.m_refFramePose_.data.position.y = transFormInv.translation()[1];
+  port.m_refFramePose_.data.position.z = transFormInv.translation()[2];
+  cnoid::Vector3 rpy = cnoid::rpyFromRot(transFormInv.linear());
+  port.m_refFramePose_.data.orientation.r = rpy[0];
+  port.m_refFramePose_.data.orientation.p = rpy[1];
+  port.m_refFramePose_.data.orientation.y = rpy[2];
+  port.m_refFramePose_.tm = port.m_q_.tm;
+  port.m_refFramePoseOut_.write();
+
 }
 
 RTC::ReturnCode_t EEFFrameConverter::onExecute(RTC::UniqueId ec_id){

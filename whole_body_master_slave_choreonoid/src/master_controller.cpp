@@ -104,6 +104,7 @@ public:
 
   void periodicTimerCallback(const ros::TimerEvent& event){
     primitive_motion_level_msgs::PrimitiveStateArray msg;
+    double dt = (event.current_real - event.last_real).toSec();
     for(std::map<std::string,std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it=this->slaveConfig_.primitiveState().begin();it!=this->slaveConfig_.primitiveState().end();it++){
       if(this->masterConfigMsgIdxMap_.find(it->first) == this->masterConfigMsgIdxMap_.end()) continue;
       cnoid::LinkPtr link = this->URDFToVRML(it->second->parentLinkName());
@@ -143,6 +144,8 @@ public:
         for(int i=0;i<6;i++) out.pose_follow_gain[i] *= 0.0;
         for(int i=0;i<6;i++) out.wrench_follow_gain[i] *= 1.0;
       }
+
+      out.time = dt * 3; // なんとなく
 
       msg.primitive_state.push_back(out);
     }

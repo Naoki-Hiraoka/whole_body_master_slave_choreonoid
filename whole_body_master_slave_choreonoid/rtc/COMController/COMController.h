@@ -137,7 +137,7 @@ protected:
   static void preProcessForControl(const std::string& instance_name);
   static void calcOutputPorts(const std::string& instance_name,
                               COMController::Ports& port,
-                              const cnoid::Vector3 prevCOMCom,
+                              const cnoid::Vector3& prevCOMCom,
                               const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
                               const Eigen::VectorXd& l,
                               const Eigen::VectorXd& u,
