@@ -46,6 +46,7 @@ public:
     }
 
     masterCommandPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("master_command",1);
+    masterCommandAllPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("master_command_all",1);
 
     std::map<std::string,std::string> pairedSensorStrMap;
     pnh.getParam("paired_sensor",pairedSensorStrMap);
@@ -103,7 +104,8 @@ public:
   }
 
   void periodicTimerCallback(const ros::TimerEvent& event){
-    primitive_motion_level_msgs::PrimitiveStateArray msg;
+    primitive_motion_level_msgs::PrimitiveStateArray msg_support;
+    primitive_motion_level_msgs::PrimitiveStateArray msg_all;
     double dt = (event.current_real - event.last_real).toSec();
     for(std::map<std::string,std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it=this->slaveConfig_.primitiveState().begin();it!=this->slaveConfig_.primitiveState().end();it++){
       if(this->masterConfigMsgIdxMap_.find(it->first) == this->masterConfigMsgIdxMap_.end()) continue;
@@ -147,9 +149,15 @@ public:
 
       out.time = dt * 3; // なんとなく
 
-      msg.primitive_state.push_back(out);
+      msg_support.primitive_state.push_back(out);
+
+      out.pose_follow_gain = this->masterConfigMsg_.primitive_state[this->masterConfigMsgIdxMap_[it->first]].pose_follow_gain;
+      for(int i=0;i<6;i++) out.wrench_follow_gain[i] *= 0.0;
+      msg_all.primitive_state.push_back(out);
+
     }
-    masterCommandPub_.publish(msg);
+    masterCommandPub_.publish(msg_support);
+    masterCommandAllPub_.publish(msg_all);
   }
 
   cnoid::LinkPtr URDFToVRML(const std::string& URDFLinkName){
@@ -182,6 +190,7 @@ protected:
   std::vector<ros::Subscriber> slaveForceSensorSubs_;
 
   ros::Publisher masterCommandPub_;
+  ros::Publisher masterCommandAllPub_;
 
   std::shared_ptr<urdf::Model> robot_urdf_;
   cnoid::BodyPtr robot_vrml_;
