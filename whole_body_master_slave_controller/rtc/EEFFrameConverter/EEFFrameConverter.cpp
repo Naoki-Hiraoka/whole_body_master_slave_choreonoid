@@ -109,16 +109,16 @@ void EEFFrameConverter::processModeTransition(const std::string& instance_name, 
 
 void EEFFrameConverter::calcFrameConversion(const std::string& instance_name, const cnoid::BodyPtr& robot, const primitive_motion_level_tools::PrimitiveStates& primitiveStates, cnoid::Position& transForm, std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >& frameConversionWeightInterpolatorMap, double dt) {
 
-  // 1. weightを計算
+  // 1. weightを計算. posefollowgainが0でないeefのみ変換の基準とする
   //  消滅したEEFを削除
   for(std::unordered_map<std::string, std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > >::iterator it=frameConversionWeightInterpolatorMap.begin();it!=frameConversionWeightInterpolatorMap.end();){
-    if (primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end())
+    if (primitiveStates.primitiveState().find(it->first) == primitiveStates.primitiveState().end() || primitiveStates.primitiveState().find(it->first)->second->poseFollowGain().norm()==0.0)
       it = frameConversionWeightInterpolatorMap.erase(it);
     else ++it;
   }
   //  新しく増えたEEFを追加 0 -> 1
   for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it=primitiveStates.primitiveState().begin();it!=primitiveStates.primitiveState().end();it++){
-    if(frameConversionWeightInterpolatorMap.find(it->first)==frameConversionWeightInterpolatorMap.end()){
+    if(primitiveStates.primitiveState().find(it->first)->second->poseFollowGain().norm()!=0.0 && frameConversionWeightInterpolatorMap.find(it->first)==frameConversionWeightInterpolatorMap.end()){
       std::shared_ptr<cpp_filters::TwoPointInterpolator<double> > frameConversionWeightInterpolator = std::make_shared<cpp_filters::TwoPointInterpolator<double> >(0.0, 0.0, 0.0, cpp_filters::LINEAR); // 0はよくないが、後ろの処理でdt進むので0ではなくなる
       frameConversionWeightInterpolator->setGoal(1.0, 1.0);
       frameConversionWeightInterpolatorMap[it->first] = frameConversionWeightInterpolator;
@@ -130,6 +130,7 @@ void EEFFrameConverter::calcFrameConversion(const std::string& instance_name, co
   std::vector<cnoid::Position> actTs;
   std::vector<double> weights;
   for(std::map<std::string, std::shared_ptr<primitive_motion_level_tools::PrimitiveState> >::const_iterator it=primitiveStates.primitiveState().begin();it!=primitiveStates.primitiveState().end();it++){
+    if(it->second->poseFollowGain().norm()==0.0) continue;
     const cnoid::LinkPtr& link = robot->link(it->second->parentLinkName());
     if(!link) continue;
     refTs.push_back(it->second->targetPose());
