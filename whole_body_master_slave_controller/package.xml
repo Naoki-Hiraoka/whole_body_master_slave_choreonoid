@@ -17,4 +17,5 @@
   <depend>primitive_motion_level_msgs</depend>
   <depend>primitive_motion_level_tools</depend>
   <depend>cpp_filters</depend>
+  <depend>urdf</depend>
 </package>
