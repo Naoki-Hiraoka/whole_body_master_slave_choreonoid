@@ -50,7 +50,7 @@ public:
     slaveJointStateSub_ = pnh.subscribe("slave_joint_states", 1, &MasterController::slaveJointStateCb, this);
     slaveOdometrySub_ = pnh.subscribe("slave_odom", 1, &MasterController::slaveOdometryCb, this);
 
-    slaveCommandPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("slave_command",1);
+    slaveCommandPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("slave_command",10);
 
     masterToSlaveFramepInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(), cpp_filters::HOFFARBIB);
     masterToSlaveFrameRInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolatorSO3>(cnoid::Matrix3::Identity(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(), cpp_filters::HOFFARBIB);
@@ -215,7 +215,7 @@ public:
       out.pose.orientation.y = q.y();
       out.pose.orientation.z = q.z();
 
-      out.time = dt * 3; // なんとなく
+      out.time = dt * 5; // なんとなく
       msg.primitive_state.push_back(out);
     }
     slaveCommandPub_.publish(msg);

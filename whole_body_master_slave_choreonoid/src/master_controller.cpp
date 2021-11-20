@@ -45,8 +45,8 @@ public:
       }
     }
 
-    masterCommandPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("master_command",1);
-    masterCommandAllPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("master_command_all",1);
+    masterCommandPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("master_command",10);
+    masterCommandAllPub_ = pnh.advertise<primitive_motion_level_msgs::PrimitiveStateArray>("master_command_all",10);
 
     std::map<std::string,std::string> pairedSensorStrMap;
     pnh.getParam("paired_sensor",pairedSensorStrMap);
