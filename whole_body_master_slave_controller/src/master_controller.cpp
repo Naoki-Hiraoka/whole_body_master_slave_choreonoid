@@ -161,7 +161,7 @@ public:
   }
 
   cnoid::LinkPtr URDFToVRML(const std::string& URDFLinkName){
-    LinkConstSharedPtr link = this->robot_urdf_->getLink(URDFLinkName);
+    urdf::LinkConstSharedPtr link = this->robot_urdf_->getLink(URDFLinkName);
     if(link){
       if(link->parent_joint){
         return this->robot_vrml_->link(link->parent_joint->name);
