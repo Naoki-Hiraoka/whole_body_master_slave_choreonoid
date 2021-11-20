@@ -222,7 +222,7 @@ public:
   }
 
   cnoid::LinkPtr URDFToVRMLmaster(const std::string& URDFLinkName){
-    std::shared_ptr<const urdf::Link> link = this->master_robot_urdf_->getLink(URDFLinkName);
+    LinkConstSharedPtr link = this->master_robot_urdf_->getLink(URDFLinkName);
     if(link){
       if(link->parent_joint){
         return this->master_robot_vrml_->link(link->parent_joint->name);
@@ -234,7 +234,7 @@ public:
     return nullptr;
   };
   cnoid::LinkPtr URDFToVRMLslave(const std::string& URDFLinkName){
-    std::shared_ptr<const urdf::Link> link = this->slave_robot_urdf_->getLink(URDFLinkName);
+    LinkConstSharedPtr link = this->slave_robot_urdf_->getLink(URDFLinkName);
     if(link){
       if(link->parent_joint){
         return this->slave_robot_vrml_->link(link->parent_joint->name);
