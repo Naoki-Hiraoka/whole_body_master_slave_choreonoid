@@ -196,7 +196,7 @@ namespace cfr_calculator {
     }
 
     // SCFRの各要素はx[0:1]の次元の大きさに揃っている
-    if(!static_equilibuim_test::calcProjection(A,b,C,dl,du,this->M_,this->l_,this->u_,this->vertices_,debugLevel, 0.001,30,false,1e-15)){
+    if(!static_equilibuim_test::calcProjection(A,b,C,dl,du,this->M_,this->l_,this->u_,this->vertices_,debugLevel, 0.01,30,false,1e-15)){ // toleranceは0.01より小さいと時間がかかりすぎる. lptoleranceは1e-15くらい小さくないと，vertexを見逃す
       std::cerr << "[CFRCalculator::computeCFR] projection failed" << std::endl;
       this->M_.resize(0,2);
       this->l_.resize(0);
