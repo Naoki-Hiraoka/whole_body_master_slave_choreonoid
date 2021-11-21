@@ -61,7 +61,8 @@ namespace whole_body_master_slave_choreonoid {
       if(cross.norm()==0){
         this->transitionVelocity_ = cnoid::Vector3::Zero();
       }else{
-        double angle = std::acos(Zaxis_in_com_frame.dot(Zaxis_in_act_frame)); // 0~pi
+        double cos = std::min(1.0,std::max(-1.0,Zaxis_in_com_frame.dot(Zaxis_in_act_frame))); // acosは定義域外のときnanを返す
+        double angle = std::acos(cos); // 0~pi
         cnoid::Vector3 axis = cross.normalized(); // include sign
         vel -= axis * angle / this->transitionTime_;
       }
