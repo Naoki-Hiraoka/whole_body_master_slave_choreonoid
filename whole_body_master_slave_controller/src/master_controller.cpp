@@ -55,7 +55,7 @@ public:
       if(fsensor) this->pairedSensorMap_[it->first] = fsensor;
     }
 
-    timer_ = nh.createTimer(ros::Duration(1.0 / 500),
+    timer_ = nh.createTimer(ros::Duration(1.0 / 100),
                             boost::bind(&MasterController::periodicTimerCallback, this, _1));
   }
 
@@ -147,7 +147,7 @@ public:
         for(int i=0;i<6;i++) out.wrench_follow_gain[i] *= 1.0;
       }
 
-      out.time = dt * 3; // なんとなく
+      out.time = dt * 5; // なんとなく
 
       msg_support.primitive_state.push_back(out);
 

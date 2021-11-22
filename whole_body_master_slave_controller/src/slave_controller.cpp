@@ -55,7 +55,7 @@ public:
     masterToSlaveFramepInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(), cpp_filters::HOFFARBIB);
     masterToSlaveFrameRInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolatorSO3>(cnoid::Matrix3::Identity(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(), cpp_filters::HOFFARBIB);
 
-    timer_ = nh.createTimer(ros::Duration(1.0 / 500),
+    timer_ = nh.createTimer(ros::Duration(1.0 / 50),
                             boost::bind(&MasterController::periodicTimerCallback, this, _1));
   }
 
