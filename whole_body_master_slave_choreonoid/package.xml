@@ -18,5 +18,6 @@
   <depend>primitive_motion_level_tools</depend>
   <depend>cfr_calculator</depend>
   <depend>cpp_filters</depend>
+  <depend>joint_limit_tables</depend>
 
 </package>

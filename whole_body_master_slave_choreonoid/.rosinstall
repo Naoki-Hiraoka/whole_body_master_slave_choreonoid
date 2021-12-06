@@ -14,3 +14,6 @@
 - git:
     local-name: primitive_motion_level_controller
     uri: https://github.com/Naoki-Hiraoka/primitive_motion_level_controller.git
+- git:
+    local-name: joint_limit_tables
+    uri: https://github.com/Naoki-Hiraoka/joint_limit_tables.git

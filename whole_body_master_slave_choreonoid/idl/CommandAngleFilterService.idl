@@ -1,0 +1,17 @@
+#include "ExtendedDataTypes.idl" // openrtm
+
+module whole_body_master_slave_choreonoid
+{
+  interface CommandAngleFilterService
+  {
+    struct CommandAngleFilterParam
+    {
+      long debugLevel;
+      double minGoalTime;
+    };
+    void setParams(in CommandAngleFilterParam i_param);
+    void getParams(out CommandAngleFilterParam i_param);
+    boolean startControl();
+    boolean stopControl();
+  };
+};
