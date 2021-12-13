@@ -32,6 +32,8 @@ RTC::ReturnCode_t CommandAngleFilter::onInitialize(){
 
   addInPort("qIn", this->ports_.m_qIn_);
   addOutPort("qOut", this->ports_.m_qOut_);
+  addInPort("basePoseIn", this->ports_.m_basePoseIn_);
+  addOutPort("basePoseOut", this->ports_.m_basePoseOut_);
   this->ports_.m_CommandAngleFilterServicePort_.registerProvider("service0", "CommandAngleFilterService", this->ports_.m_service0_);
   addPort(this->ports_.m_CommandAngleFilterServicePort_);
 
@@ -70,6 +72,10 @@ RTC::ReturnCode_t CommandAngleFilter::onInitialize(){
 
   this->qInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::VectorX> >(cnoid::VectorX::Zero(this->robot_com_->numJoints()), cnoid::VectorX::Zero(this->robot_com_->numJoints()), cnoid::VectorX::Zero(this->robot_com_->numJoints()), cpp_filters::CUBICSPLINE);
   this->qOffsetInterpolator_ = std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::VectorX> >(cnoid::VectorX::Zero(this->robot_com_->numJoints()), cnoid::VectorX::Zero(this->robot_com_->numJoints()), cnoid::VectorX::Zero(this->robot_com_->numJoints()), cpp_filters::HOFFARBIB);
+  this->rootpInterpolator_= std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::CUBICSPLINE);
+  this->rootpOffsetInterpolator_= std::make_shared<cpp_filters::TwoPointInterpolator<cnoid::Vector3> >(cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);
+  this->rootRInterpolator_= std::make_shared<cpp_filters::TwoPointInterpolatorSO3 >(cnoid::Matrix3::Identity(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::CUBICSPLINE);
+  this->rootROffsetInterpolator_= std::make_shared<cpp_filters::TwoPointInterpolatorSO3 >(cnoid::Matrix3::Identity(),cnoid::Vector3::Zero(),cnoid::Vector3::Zero(),cpp_filters::HOFFARBIB);
 
   return RTC::RTC_OK;
 }
@@ -89,6 +95,15 @@ RTC::ReturnCode_t CommandAngleFilter::onExecute(RTC::UniqueId ec_id){
       }
     }
   }
+  if(this->ports_.m_basePoseIn_.isNew()) {
+    this->ports_.m_basePoseIn_.read();
+    this->robot_ref_->rootLink()->p()[0] = this->ports_.m_basePose_.data.position.x;
+    this->robot_ref_->rootLink()->p()[1] = this->ports_.m_basePose_.data.position.y;
+    this->robot_ref_->rootLink()->p()[2] = this->ports_.m_basePose_.data.position.z;
+    this->robot_ref_->rootLink()->R() = cnoid::rotFromRpy(this->ports_.m_basePose_.data.orientation.r,
+                                                          this->ports_.m_basePose_.data.orientation.p,
+                                                          this->ports_.m_basePose_.data.orientation.y);
+  }
   cnoid::VectorX qref = cnoid::VectorX::Zero(this->robot_ref_->numJoints());
   for(int i=0;i<this->robot_ref_->numJoints();i++) qref[i] = this->robot_ref_->joint(i)->q();
 
@@ -103,6 +118,14 @@ RTC::ReturnCode_t CommandAngleFilter::onExecute(RTC::UniqueId ec_id){
       this->qInterpolator_->get(qout);
       this->qOffsetInterpolator_->reset(qout - qref);
       this->qOffsetInterpolator_->setGoal(cnoid::VectorX::Zero(this->robot_ref_->numJoints()), 3.0);
+      cnoid::Vector3 rootpout = cnoid::Vector3::Zero();
+      this->rootpInterpolator_->get(rootpout);
+      this->rootpOffsetInterpolator_->reset(rootpout - this->robot_ref_->rootLink()->p());
+      this->rootpOffsetInterpolator_->setGoal(cnoid::Vector3::Zero(), 3.0);
+      cnoid::Matrix3 rootRout = cnoid::Matrix3::Identity();
+      this->rootRInterpolator_->get(rootRout);
+      this->rootROffsetInterpolator_->reset(rootRout * this->robot_ref_->rootLink()->R().transpose());
+      this->rootROffsetInterpolator_->setGoal(cnoid::Matrix3::Identity(), 3.0);
     }
     this->mode_.setNextMode(CommandAngleFilter::ControlMode::MODE_IDLE);
     break;
@@ -111,13 +134,21 @@ RTC::ReturnCode_t CommandAngleFilter::onExecute(RTC::UniqueId ec_id){
 
   cnoid::VectorX qout = cnoid::VectorX::Zero(this->robot_ref_->numJoints());
   cnoid::VectorX dqout = cnoid::VectorX::Zero(this->robot_ref_->numJoints());
+  cnoid::Vector3 rootpout = cnoid::Vector3::Zero();
+  cnoid::Vector3 rootvout = cnoid::Vector3::Zero();
+  cnoid::Matrix3 rootRout = cnoid::Matrix3::Identity();
+  cnoid::Vector3 rootwout = cnoid::Vector3::Zero();
   if(this->mode_.isRunning()) {
 
     // set goal
     this->qInterpolator_->setGoal(qref, std::max(this->minGoalTime_, dt));
+    this->rootpInterpolator_->setGoal(this->robot_ref_->rootLink()->p(), std::max(this->minGoalTime_, dt));
+    this->rootRInterpolator_->setGoal(this->robot_ref_->rootLink()->R(), std::max(this->minGoalTime_, dt));
 
     // get next command
     this->qInterpolator_->get(qout, dqout, dt);
+    this->rootpInterpolator_->get(rootpout, rootvout, dt);
+    this->rootRInterpolator_->get(rootRout, rootwout, dt);
 
     // apply limit
     for(int i=0;i<this->robot_com_->numJoints();i++) {
@@ -138,19 +169,43 @@ RTC::ReturnCode_t CommandAngleFilter::onExecute(RTC::UniqueId ec_id){
     cnoid::VectorX qoffset = cnoid::VectorX::Zero(this->robot_ref_->numJoints());
     if(!this->qOffsetInterpolator_->isEmpty()) this->qOffsetInterpolator_->get(qoffset, dt);
     qout = qref + qoffset;
+
+    cnoid::Vector3 rootpoffset = cnoid::Vector3::Zero();
+    if(!this->rootpOffsetInterpolator_->isEmpty()) this->rootpOffsetInterpolator_->get(rootpoffset, dt);
+    rootpout = this->robot_ref_->rootLink()->p() + rootpoffset;
+
+    cnoid::Matrix3 rootRoffset = cnoid::Matrix3::Identity();
+    if(!this->rootROffsetInterpolator_->isEmpty()) this->rootROffsetInterpolator_->get(rootRoffset, dt);
+    rootRout = rootRoffset * this->robot_ref_->rootLink()->R();
   }
 
+  // set robot_com
+  // and
   // reinitialize interpolator
   for(int i=0;i<this->robot_com_->numJoints();i++) this->robot_com_->joint(i)->q() = qout[i];
   this->qInterpolator_->reset(qout, dqout);
+  this->robot_com_->rootLink()->p() = rootpout;
+  this->rootpInterpolator_->reset(rootpout, rootvout);
+  this->robot_com_->rootLink()->R() = rootRout;
+  this->rootRInterpolator_->reset(rootRout, rootwout);
 
   // output ports
+  this->ports_.m_qCom_.tm = this->ports_.m_q_.tm;
   this->ports_.m_qCom_.data.length(this->robot_com_->numJoints());
   for(int i=0;i<this->robot_com_->numJoints();i++){
     this->ports_.m_qCom_.data[i] = this->robot_com_->joint(i)->q();
   }
   this->ports_.m_qOut_.write();
 
+  this->ports_.m_basePoseCom_.tm = this->ports_.m_basePose_.tm;
+  this->ports_.m_basePoseCom_.data.position.x = this->robot_com_->rootLink()->p()[0];
+  this->ports_.m_basePoseCom_.data.position.y = this->robot_com_->rootLink()->p()[1];
+  this->ports_.m_basePoseCom_.data.position.z = this->robot_com_->rootLink()->p()[2];
+  cnoid::Vector3 outputBaseRpy = cnoid::rpyFromRot(this->robot_com_->rootLink()->R());
+  this->ports_.m_basePoseCom_.data.orientation.r = outputBaseRpy[0];
+  this->ports_.m_basePoseCom_.data.orientation.p = outputBaseRpy[1];
+  this->ports_.m_basePoseCom_.data.orientation.y = outputBaseRpy[2];
+  this->ports_.m_basePoseOut_.write();
 
   this->loop_++;
   return RTC::RTC_OK;

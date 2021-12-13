@@ -31,14 +31,20 @@ public:
     Ports() :
       m_qIn_("qIn", m_q_),
       m_qOut_("qOut", m_qCom_),
+      m_basePoseIn_("basePoseIn", m_basePose_),
+      m_basePoseOut_("basePoseOut", m_basePoseCom_),
 
       m_CommandAngleFilterServicePort_("CommandAngleFilterService") {
     }
 
     RTC::TimedDoubleSeq m_q_;
     RTC::InPort<RTC::TimedDoubleSeq> m_qIn_;
+    RTC::TimedPose3D m_basePose_;
+    RTC::InPort<RTC::TimedPose3D> m_basePoseIn_;
     RTC::TimedDoubleSeq m_qCom_;
     RTC::OutPort<RTC::TimedDoubleSeq> m_qOut_;
+    RTC::TimedPose3D m_basePoseCom_;
+    RTC::OutPort<RTC::TimedPose3D> m_basePoseOut_;
 
     CommandAngleFilterService_impl m_service0_;
     RTC::CorbaPort m_CommandAngleFilterServicePort_;
@@ -100,9 +106,13 @@ protected:
   cnoid::BodyPtr robot_com_;
 
   std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::VectorX> > qInterpolator_;
+  std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> > rootpInterpolator_;
+  std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> rootRInterpolator_; // world系
 
   // stop時に使う
   std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::VectorX> > qOffsetInterpolator_;
+  std::shared_ptr<cpp_filters::TwoPointInterpolator<cnoid::Vector3> > rootpOffsetInterpolator_;
+  std::shared_ptr<cpp_filters::TwoPointInterpolatorSO3> rootROffsetInterpolator_; // world系
 
   // param
   double minGoalTime_;
