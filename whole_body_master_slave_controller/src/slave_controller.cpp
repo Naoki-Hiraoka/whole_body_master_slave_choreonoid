@@ -150,7 +150,8 @@ public:
           {
             cnoid::Vector3 localZ = diffR * cnoid::Vector3::UnitZ();
             cnoid::Vector3 cross = localZ.cross(cnoid::Vector3::UnitZ());
-            double angle = std::acos(localZ.dot(cnoid::Vector3::UnitZ())); // 0~pi
+            double cos = std::min(1.0,std::max(-1.0,localZ.dot(cnoid::Vector3::UnitZ()))); // acosは定義域外のときnanを返す
+            double angle = std::acos(cos); // 0~pi
             cnoid::Vector3 axis = (cross.norm()!=0.0) ? cross.normalized() : cnoid::Vector3::UnitX();// include sign
             horizontal_diffR = Eigen::AngleAxisd(angle,axis).toRotationMatrix() * diffR;
           }
