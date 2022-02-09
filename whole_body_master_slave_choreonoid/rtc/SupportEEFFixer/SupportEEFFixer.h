@@ -134,6 +134,7 @@ protected:
 
   whole_body_master_slave_choreonoid::InternalWrenchController internalWrenchController_;
   whole_body_master_slave_choreonoid::TiltController tiltController_;
+  double alwaysTiltControlTime_ = 0.0;
 
   // params
   std::vector<cnoid::LinkPtr> useJoints_;

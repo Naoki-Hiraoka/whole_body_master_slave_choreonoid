@@ -302,6 +302,7 @@ RTC::ReturnCode_t SupportEEFFixer::onExecute(RTC::UniqueId ec_id){
     SupportEEFFixer::addOrRemoveFixedEEFMap(instance_name, this->robot_com_, this->primitiveStatesRef_, this->fixedPoseMap_, newFixedEEF);
 
     this->internalWrenchController_.control(this->primitiveStatesRef_, this->wrenchFilterMap_, this->robot_act_, this->pgain_, this->useJoints_, dt, this->debugLevel_, this->fixedPoseMap_);
+    if(this->alwaysTiltControlTime_ > 0.0) this->tiltController_.start(this->alwaysTiltControlTime_); // always
     this->tiltController_.control(this->primitiveStatesRef_, this->robot_act_, this->robot_com_, dt, this->debugLevel_, this->fixedPoseMap_);
   }else{
 
@@ -349,6 +350,8 @@ bool SupportEEFFixer::setParams(const whole_body_master_slave_choreonoid::Suppor
     if(link && link->jointId()>=0) this->useJoints_.push_back(link);
   }
 
+  if(i_param.alwaysTiltControlTime >= 0.0) this->alwaysTiltControlTime_ = i_param.alwaysTiltControlTime;
+
   return true;
 }
 
@@ -358,6 +361,7 @@ bool SupportEEFFixer::getParams(whole_body_master_slave_choreonoid::SupportEEFFi
   i_param.debugLevel = this->debugLevel_;
   i_param.useJoints.length(this->useJoints_.size());
   for(int i=0;i<this->useJoints_.size();i++) i_param.useJoints[i] = this->useJoints_[i]->name().c_str();
+  i_param.alwaysTiltControlTime = this->alwaysTiltControlTime_;
   return true;
 }
 

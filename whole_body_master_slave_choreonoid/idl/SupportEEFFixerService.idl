@@ -8,6 +8,7 @@ module whole_body_master_slave_choreonoid
     {
       long debugLevel;
       sequence<string> useJoints;
+      double alwaysTiltControlTime; // 0.0以外なら常にtiltcontrolを行う
     };
     void setParams(in SupportEEFFixerParam i_param);
     void getParams(out SupportEEFFixerParam i_param);
